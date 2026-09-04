@@ -88,7 +88,7 @@ export default function contribute(plugin: PluginContext) {
   });
 
   plugin.addCommandCenterItem({
-    id: "agent-health/open",
+    id: "agent-health.open",
     title: "Agent Health: agents & zombie-watchdog",
     icon: "Activity",
     keywords: ["zombie", "watchdog", "health", "agents"],
