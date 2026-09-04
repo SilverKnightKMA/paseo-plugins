@@ -107,7 +107,7 @@ export default function contribute(plugin: PluginContext) {
   });
 
   plugin.addCommandCenterItem({
-    id: "om-panel.open",
+    id: "om-panel-open",
     title: "Observational Memory: topics across workspaces",
     icon: "Brain",
     keywords: ["memory", "om", "observational", "topics"],
