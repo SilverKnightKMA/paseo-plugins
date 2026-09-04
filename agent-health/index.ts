@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { PluginContext } from "@getpaseo/plugin";
-import { GetStateRpc, ZwEventSchema, AgentRowSchema } from "./rpc.js";
+import { GetStateRpc, ZwEventSchema, AgentRowSchema, StuckQueueSchema } from "./rpc.js";
 import { HealthPanel } from "./panel.client.js";
 
 interface RawZwEvent {
@@ -45,6 +45,61 @@ function readZombieWatchdog(limit: number): { events: unknown[]; counts: Record<
   return { events, counts };
 }
 
+function readStuckQueues(): unknown[] {
+  const chanDir = path.join(os.homedir(), ".pi", "agent", "subagent-channel");
+  const stuck: {
+    agentId: string; name: string | null; events: number;
+    oldestEventIso: string; ageHours: number;
+  }[] = [];
+  let names: Record<string, { agentId: string }> = {};
+  try {
+    names = JSON.parse(fs.readFileSync(path.join(chanDir, "registry.json"), "utf8"));
+  } catch {
+    // no registry -> names unavailable, still report raw agent ids
+  }
+  const byAgentId = new Map<string, string>(
+    Object.entries(names).map(([n, e]) => [e.agentId, n]),
+  );
+  let files: fs.Dirent[];
+  try {
+    files = fs.readdirSync(chanDir, { withFileTypes: true });
+  } catch {
+    return stuck;
+  }
+  for (const f of files) {
+    if (!f.name.endsWith(".jsonl")) continue;
+    const agentId = f.name.replace(/\.jsonl$/, "");
+    const full = path.join(chanDir, f.name);
+    try {
+      const lines = fs.readFileSync(full, "utf8").split("\n").filter((l) => l.trim());
+      if (lines.length === 0) continue;
+      let oldest = Number.POSITIVE_INFINITY;
+      for (const line of lines) {
+        try {
+          const ts = Date.parse(JSON.parse(line).ts ?? "");
+          if (Number.isFinite(ts)) oldest = Math.min(oldest, ts);
+        } catch {
+          // skip malformed
+        }
+      }
+      if (!Number.isFinite(oldest)) continue;
+      const ageHours = (Date.now() - oldest) / 3_600_000;
+      if (ageHours < 48) continue;
+      stuck.push({
+        agentId,
+        name: byAgentId.get(agentId) ?? null,
+        events: lines.length,
+        oldestEventIso: new Date(oldest).toISOString(),
+        ageHours: Math.round(ageHours),
+      });
+    } catch {
+      // unreadable file
+    }
+  }
+  stuck.sort((a, b) => b.ageHours - a.ageHours);
+  return stuck;
+}
+
 export default function contribute(plugin: PluginContext) {
   plugin.handle(GetStateRpc, async (input, context) => {
     const agents: { id: string; status: string | null; provider: string; model: string | null; cwd: string }[] = [];
@@ -75,6 +130,7 @@ export default function contribute(plugin: PluginContext) {
       agents,
       zwEvents: ZwEventSchema.array().parse(events),
       zwCounts: counts,
+      stuckQueues: StuckQueueSchema.array().parse(readStuckQueues()),
       generatedAt: new Date().toISOString(),
     };
   });

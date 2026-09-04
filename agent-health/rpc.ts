@@ -9,6 +9,14 @@ export const AgentRowSchema = z.object({
   cwd: z.string(),
 });
 
+export const StuckQueueSchema = z.object({
+  agentId: z.string(),
+  name: z.string().nullable(),
+  events: z.number(),
+  oldestEventIso: z.string(),
+  ageHours: z.number(),
+});
+
 export const ZwEventSchema = z.object({
   ts: z.string(),
   code: z.string(),
@@ -24,6 +32,7 @@ export const GetStateRpc = defineRpc({
   output: z.object({
     agents: z.array(AgentRowSchema),
     zwEvents: z.array(ZwEventSchema),
+    stuckQueues: z.array(StuckQueueSchema),
     zwCounts: z.record(z.string(), z.number()),
     generatedAt: z.string(),
   }),

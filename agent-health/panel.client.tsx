@@ -121,6 +121,19 @@ export function HealthPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
             )}
           </View>
 
+          <View style={styles.card}>
+            <Text style={styles.title}>Stuck queues ({data.stuckQueues.length})</Text>
+            {data.stuckQueues.length === 0 ? (
+              <Text style={styles.dim}>no undelivered messages older than 48h</Text>
+            ) : (
+              data.stuckQueues.map((q) => (
+                <Text key={q.agentId} style={styles.accentText}>
+                  {q.name ?? q.agentId.slice(0, 8)} · {q.events} msg · {q.ageHours}h old
+                </Text>
+              ))
+            )}
+          </View>
+
           <Text style={styles.dim}>
             workspace {workspaceId} · updated {timeAgo(data.generatedAt)}
           </Text>
