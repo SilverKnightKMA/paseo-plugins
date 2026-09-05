@@ -148,7 +148,7 @@ async function readOmStatus(
     if (!parsed.success) {
       return {
         ...empty,
-        workspace: directory,
+        workspace: directory ? path.basename(directory) : directory,
         resolved,
         sessions,
         note: "session này chưa ghi om-status.json (OM off hoặc chưa có event)",
@@ -160,7 +160,7 @@ async function readOmStatus(
       generatedAt: data.generatedAt,
       enabled: data.enabled,
       sessionId: data.sessionId || resolved.sessionId,
-      workspace: data.workspace,
+      workspace: data.workspace ? path.basename(data.workspace) : data.workspace,
       lines: data.lines,
       summary: data.summary ?? null,
       events: [...data.events].reverse(), // newest first for the panel

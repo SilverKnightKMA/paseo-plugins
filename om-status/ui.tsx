@@ -43,9 +43,8 @@ export const OM_VIA_LABEL: Record<string, string> = {
 };
 
 export function omViaSuffix(via: string | null | undefined): string {
-  if (!via || via === "explicit") return "";
-  const label = OM_VIA_LABEL[via] ?? via;
-  return ` (${label})`;
+  if (!via) return "";
+  return ` (${OM_VIA_LABEL[via] ?? via})`;
 }
 
 /** Card nền surface1 + rail trái 3px (mặc định accent, đổi màu qua prop). */

@@ -48,6 +48,7 @@ export function OmPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
           ...(sel
             ? [`${sel.topicFiles} topics · ${sel.totalKb} KB · cập nhật ${omTimeAgo(sel.lastModified)}`]
             : [data?.note ?? "…"]),
+          ...(data ? [`live · cập nhật ${omTimeAgo(data.generatedAt)} · poll ${POLL_MS / 1000}s`] : []),
         ]}
       />
 
@@ -92,11 +93,6 @@ export function OmPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
         </OmCard>
       ) : null}
 
-      {data ? (
-        <Text style={{ color: c.foregroundMuted, fontSize: 11, marginTop: 4 }}>
-          poll {POLL_MS / 1000}s · updated {omTimeAgo(data.generatedAt)}
-        </Text>
-      ) : null}
     </ScrollView>
   );
 }
