@@ -6,6 +6,7 @@ import { OmStatusPanel } from "./panel.client";
 import { startOmLive } from "./live.client";
 import { OmHistoryCard } from "./history.client";
 import { GetOmStatusRpc, OmEventSchema, OmSummarySchema, type OmStatusState } from "./rpc.js";
+import { mergeLiveTitles, titleFor } from "./titles.js";
 
 const OmStatusFileSchema = z.object({
   schema: z.literal(1),
@@ -114,11 +115,14 @@ async function readOmStatus(
     // 2) enumerate per-session files for the side list (display only)
     const memoryDir = path.join(directory, ".memory");
     const sessionDirs = (await readdir(memoryDir, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name);
+    // title cache: giữ tên cho session đã chết (agent process gone) — live map
+    // thắng cache; cả hai plugin ghi vào cùng file ~/.paseo/plugin-data/
+    const titleCache = mergeLiveTitles(titleBySession);
     const sessions: { sessionId: string; ageSec: number; title: string | null }[] = [];
     for (const sessionId of sessionDirs) {
       try {
         const mtime = (await stat(path.join(memoryDir, sessionId, "om-status.json"))).mtimeMs;
-        sessions.push({ sessionId, ageSec: Math.round((Date.now() - mtime) / 1000), title: titleBySession.get(sessionId) ?? null });
+        sessions.push({ sessionId, ageSec: Math.round((Date.now() - mtime) / 1000), title: titleFor(titleCache, sessionId, titleBySession) });
       } catch {
         // no status file for this session — not listed
       }

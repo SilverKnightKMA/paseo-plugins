@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { PluginContext } from "@getpaseo/plugin";
 import { GetOmStateRpc, type SessionBrief, type SessionDetail } from "./rpc.js";
+import { mergeLiveTitles, titleFor } from "./titles.js";
 import { OmPanel } from "./panel.client.js";
 
 type AgentLike = {
@@ -86,6 +87,7 @@ function listSessions(memoryDir: string, indexLines: number): { briefs: SessionB
       totalKb: Math.round(totalBytes / 1024),
       lastModified: newestMs > 0 ? new Date(newestMs).toISOString() : null,
       active: false, // đánh dấu ở caller sau khi resolve
+      title: null, // điền từ live/cache ở caller
     };
     briefs.push(brief);
     byId.set(entry.name, { ...brief, indexHead, topics });
@@ -106,6 +108,21 @@ export default function contribute(plugin: PluginContext) {
       }
       const memoryDir = path.join(directory, ".memory");
       const { briefs, byId } = listSessions(memoryDir, input.indexLines);
+
+      // titles: live từ agents.list() + cache cho session đã chết (chung file
+      // cache với om-status — nguồn chân lý là title Paseo của agent)
+      const liveTitles = new Map<string, string>();
+      try {
+        const res = await context.paseo.agents.list();
+        for (const a of unwrapAgents(res.entries)) {
+          const sid = a.runtimeInfo?.sessionId;
+          if (sid && a.title) liveTitles.set(sid, a.title);
+        }
+      } catch {
+        // cache-only fallback
+      }
+      const titleCache = mergeLiveTitles(liveTitles);
+      for (const b of briefs) b.title = titleFor(titleCache, b.sessionId, liveTitles);
 
       // resolution chain: explicit → agent → workspace-active → newest
       let sessionId: string | null = input.sessionId ?? null;

@@ -29,6 +29,7 @@ export const SessionBriefSchema = z.object({
   totalKb: z.number(),
   lastModified: z.string().nullable(),
   active: z.boolean(),
+  title: z.string().nullable().default(null),
 });
 
 export const GetOmStateRpc = defineRpc({

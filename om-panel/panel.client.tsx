@@ -116,7 +116,7 @@ export function OmPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
               >
                 <Text style={{ color: isSel ? c.accent : c.foregroundMuted, fontSize: 11 }}>
                   {s.active ? "● " : ""}
-                  {s.sessionId.slice(0, 8)} · {s.topicFiles}t
+                  {s.title ? `${s.title.slice(0, 24)}` : s.sessionId.slice(0, 8)} · {s.topicFiles}t
                 </Text>
               </Pressable>
             );
