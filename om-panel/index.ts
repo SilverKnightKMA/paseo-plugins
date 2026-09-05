@@ -177,7 +177,7 @@ export default function contribute(plugin: PluginContext) {
 
   plugin.addWorkspacePanel({
     id: "om-panel",
-    title: "Observational Memory",
+    title: "OM Topics",
     icon: "Brain",
     context: "workspace",
     Component: OmPanel,
@@ -185,7 +185,7 @@ export default function contribute(plugin: PluginContext) {
 
   plugin.addCommandCenterItem({
     id: "om-panel-open",
-    title: "Observational Memory: topics theo session",
+    title: "OM Topics: topics theo session",
     icon: "Brain",
     keywords: ["memory", "om", "observational", "topics", "session"],
     context: "workspace",

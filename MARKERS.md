@@ -35,7 +35,7 @@ consumes to restyle them as cards. Two repos, one contract:
    producer side (`extensions/markers.test.ts`) → vendor this file into
    `paseo-plugins/` → update `markers.ts` there → both checks green.
 5. Plugin reads state, never writes it. Cards are transient; durable state
-   lives in panels (`Agent Health`, `Observational Memory`).
+   lives in panels (`Agent Health`, `OM Topics`).
 
 ## Markers
 
