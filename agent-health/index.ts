@@ -3,10 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import type { PluginContext } from "@getpaseo/plugin";
 import { z } from "zod";
-import { GetStateRpc, ZwEventSchema, AgentRowSchema, StuckQueueSchema } from "./rpc.js";
+import { GetStateRpc, GetZwAlertRpc, ZwEventSchema, AgentRowSchema, StuckQueueSchema } from "./rpc.js";
 import { HealthPanel } from "./panel.client.js";
 import { SubagentNoticeCard, type SubagentNoticeData } from "./subagent-notice.client.js";
 import { MutedAbortCard } from "./muted-abort.client.js";
+import { startZwLive } from "./zw-pill.client.js";
 
 interface RawZwEvent {
   ts?: unknown;
@@ -138,6 +139,28 @@ export default function contribute(plugin: PluginContext) {
     };
   });
 
+  plugin.addClientSide((client) => startZwLive(client));
+
+  plugin.handle(GetZwAlertRpc, async (input) => {
+    const FRESH_MS = 5 * 60_000;
+    const ALERT_CODES = new Set(["zombie", "b2-settle-lost"]);
+    const { events } = readZombieWatchdog(1);
+    const last = events[events.length - 1];
+    if (!last) {
+      return { alert: false, ts: null, code: null, idleMs: null, agentId: null, mine: false };
+    }
+    const age = Date.now() - Date.parse(last.ts);
+    const alert = Number.isFinite(age) && age >= 0 && age < FRESH_MS && ALERT_CODES.has(last.code);
+    return {
+      alert,
+      ts: last.ts,
+      code: last.code,
+      idleMs: last.idleMs,
+      agentId: last.agentId,
+      mine: Boolean(input.agentId && last.agentId === input.agentId),
+    };
+  });
+
   plugin.addWorkspacePanel({
     id: "agent-health",
     title: "Agent Health",
@@ -166,9 +189,17 @@ export default function contribute(plugin: PluginContext) {
     query: { itemType: "user_message" },
     transform: ({ item }) => {
       if (item.type !== "user_message") return undefined;
-      const parsed = parseSubagentNotice(item.text);
-      if (!parsed) return undefined;
-      return { items: [{ type: "plugin" as const, kind: "subagent-report", version: 1, data: parsed }] };
+      // một user message có thể chứa nhiều envelope (drain gộp bằng "\n\n")
+      const parsedAll = parseAllSubagentNotices(item.text);
+      if (parsedAll.length === 0) return undefined;
+      return {
+        items: parsedAll.map((parsed) => ({
+          type: "plugin" as const,
+          kind: "subagent-report",
+          version: 1,
+          data: parsed,
+        })),
+      };
     },
   });
 
@@ -212,6 +243,20 @@ export default function contribute(plugin: PluginContext) {
 
 const SUBAGENT_RE =
   /^<subagent-message from="([0-9a-f-]{36})" role="([\w-]+)" kind="([\w-]+)">\n?([\s\S]*?)\n?<\/subagent-message>$/;
+
+const SUBAGENT_BLOCK_RE =
+  /<subagent-message from="[0-9a-f-]{36}" role="[\w-]+" kind="[\w-]+">[\s\S]*?<\/subagent-message>/g;
+
+/** Split a user message into envelopes, parse each; [] = not ours. */
+function parseAllSubagentNotices(text: string): SubagentNoticeData[] {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("<subagent-message")) return [];
+  const blocks = trimmed.match(SUBAGENT_BLOCK_RE) ?? [];
+  if (blocks.length === 0) return [];
+  // mọi block phải khớp format; nếu chỉ một phần khớp thì để nguyên pass-through
+  const parsed = blocks.map((b) => parseSubagentNotice(b));
+  return parsed.every((p) => p !== null) ? (parsed as SubagentNoticeData[]) : [];
+}
 
 /** Parse + clean a <subagent-message> block into card data; null = not ours. */
 function parseSubagentNotice(text: string): SubagentNoticeData | null {

@@ -39,3 +39,18 @@ export const GetStateRpc = defineRpc({
 });
 
 export type AgentHealthState = z.infer<typeof GetStateRpc.output>;
+
+export const GetZwAlertRpc = defineRpc({
+  name: "agent-health.zw-alert",
+  input: z.object({ agentId: z.string().optional() }).default({}),
+  output: z.object({
+    alert: z.boolean(),
+    ts: z.string().nullable(),
+    code: z.string().nullable(),
+    idleMs: z.number().nullable(),
+    agentId: z.string().nullable(),
+    mine: z.boolean(),
+  }),
+});
+
+export type ZwAlertState = z.infer<typeof GetZwAlertRpc.output>;
