@@ -61,19 +61,28 @@ export function startZwLive(client: PluginClientContext): () => void {
 }
 
 const POLL_MS = 2000;
+/** After this many consecutive RPC failures the pill shows a muted "zw ?" chip —
+ *  a silent catch would make the pill vanish exactly when it is needed most
+ *  (the 2026-09-05 "zombie without notification" report). */
+const ERRORS_BEFORE_MUTE_CHIP = 3;
 
 export function ZwPill(props: PluginComposerPillProps) {
   const read = useRpc(GetZwAlertRpc);
   const [data, setData] = useState<ZwAlertState | null>(null);
+  const [errors, setErrors] = useState(0);
   const mounted = useRef(true);
   const c = props.theme.colors;
 
   const refresh = useCallback(async () => {
     try {
       const next = await read({ agentId: props.agentId });
-      if (mounted.current) setData(next);
+      if (mounted.current) {
+        setData(next);
+        setErrors(0);
+      }
     } catch {
-      // keep last snapshot
+      // keep last snapshot, but make persistent failures visible
+      if (mounted.current) setErrors((n) => n + 1);
     }
   }, [props.agentId, read]);
 
@@ -87,28 +96,37 @@ export function ZwPill(props: PluginComposerPillProps) {
     };
   }, [refresh]);
 
-  if (!data?.alert) return null;
-  const who = data.agentId ? data.agentId.slice(0, 8) : "?";
-  const mine = data.mine;
-  return (
-    <View
-      style={{
-        backgroundColor: c.surface1,
-        borderColor: mine ? c.statusDanger : c.statusWarning,
-        borderWidth: 1,
-        borderRadius: 999,
-        paddingHorizontal: 10,
-        paddingVertical: 3,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 6,
-      }}
-    >
-      <Text style={{ color: mine ? c.statusDanger : c.statusWarning, fontWeight: "700" as const, fontSize: 12 }}>⚠</Text>
-      <Text style={{ color: mine ? c.statusDanger : c.statusWarning, fontSize: 12, fontWeight: "700" as const }}>
-        {mine ? "zombie — bấm STOP" : `zw ${who}`}
-      </Text>
-      <Text style={{ color: c.foregroundMuted, fontFamily: "monospace", fontSize: 10 }}>{data.code}</Text>
-    </View>
-  );
+  if (data?.alert) {
+    const who = data.agentId ? data.agentId.slice(0, 8) : "?";
+    const mine = data.mine;
+    return (
+      <View
+        style={{
+          backgroundColor: mine ? c.statusDanger + "22" : c.surface1,
+          borderColor: mine ? c.statusDanger : c.statusWarning,
+          borderWidth: 1,
+          borderRadius: 999,
+          paddingHorizontal: 10,
+          paddingVertical: 3,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
+        <Text style={{ color: mine ? c.statusDanger : c.statusWarning, fontWeight: "700" as const, fontSize: 12 }}>⚠</Text>
+        <Text style={{ color: mine ? c.statusDanger : c.statusWarning, fontSize: 12, fontWeight: "700" as const }}>
+          {mine ? "ZOMBIE — bấm STOP" : `zw ${who}`}
+        </Text>
+        <Text style={{ color: c.foregroundMuted, fontFamily: "monospace", fontSize: 10 }}>{data.code}</Text>
+      </View>
+    );
+  }
+  if (errors >= ERRORS_BEFORE_MUTE_CHIP) {
+    return (
+      <View style={{ backgroundColor: c.surface1, borderColor: c.surface2, borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
+        <Text style={{ color: c.foregroundMuted, fontFamily: "monospace", fontSize: 10 }}>zw ? ({errors})</Text>
+      </View>
+    );
+  }
+  return null;
 }

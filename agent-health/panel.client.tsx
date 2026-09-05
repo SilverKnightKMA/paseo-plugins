@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Text, View, Pressable, ScrollView } from "react-native";
 import { useRpc } from "@getpaseo/plugin";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin";
@@ -10,6 +10,9 @@ function shortCwd(cwd: string): string {
   }
   return cwd.replace("/home/coder/workspaces/", "~/").replace("/home/coder", "~");
 }
+
+/** Panel poll interval — matches om-status/om-panel live panels. */
+const POLL_MS = 2000;
 
 function timeAgo(iso: string): string {
   const then = Date.parse(iso);
@@ -28,13 +31,17 @@ export function HealthPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
   const [data, setData] = useState<AgentHealthState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const hasDataRef = useRef(false);
 
   const load = useCallback(async () => {
-    setBusy(true);
+    // Background (interval) polls never flip `busy` — only the very first load does,
+    // so the button text and layout stay stable while data refreshes underneath.
+    setBusy(!hasDataRef.current);
     setError(null);
     try {
       const result = await getState({ limit: 20 });
       setData(result);
+      hasDataRef.current = true;
     } catch (err) {
       setError(String(err));
     } finally {
@@ -44,6 +51,10 @@ export function HealthPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
 
   useEffect(() => {
     void load();
+    // Auto-refresh like om-status/om-panel: the panel is a live monitor, not a
+    // load-once snapshot (user request 2026-09-05 — "tự động refresh như OM").
+    const timer = setInterval(() => void load(), POLL_MS);
+    return () => clearInterval(timer);
   }, [load]);
 
   const styles = useMemo(
@@ -74,11 +85,31 @@ export function HealthPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
 
   const running = data?.agents.filter((a) => a.status === "running") ?? [];
 
+  // Fresh (< 5 min) zombie/b2 detection → loud banner at the top, so a zombie is
+  // visible the moment the panel is opened even if the composer pill was missed.
+  const lastZw = data?.zwEvents[data.zwEvents.length - 1] ?? null;
+  const zwAlertCode =
+    lastZw && (lastZw.code === "zombie" || lastZw.code === "b2-settle-lost") ? lastZw.code : null;
+  const zwAlertAge = lastZw ? Date.now() - Date.parse(lastZw.ts) : null;
+  const zwAlertFresh =
+    zwAlertCode !== null && zwAlertAge !== null && zwAlertAge >= 0 && zwAlertAge < 5 * 60_000;
+
   return (
     <ScrollView style={styles.screen}>
+      {zwAlertFresh && lastZw ? (
+        <View style={{ backgroundColor: theme.colors.statusDanger + "22", borderColor: theme.colors.statusDanger, borderWidth: 1, borderRadius: 8, padding: 8, marginBottom: 8 }}>
+          <Text style={{ color: theme.colors.statusDanger, fontSize: 13, fontWeight: "700" as const }}>
+            ⚠ ZOMBIE DETECTED — {zwAlertCode} ({timeAgo(lastZw.ts)})
+          </Text>
+          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
+            {lastZw.agentId ? `agent ${lastZw.agentId.slice(0, 8)}` : "agent unknown"} · bấm STOP trên agent đó (nếu là mình)
+          </Text>
+        </View>
+      ) : null}
       <Pressable style={styles.button} onPress={() => void load()} disabled={busy}>
         <Text style={styles.buttonText}>{busy ? "Loading…" : "Refresh"}</Text>
       </Pressable>
+      <Text style={styles.dim}>auto-refresh every {POLL_MS / 1000}s · updated {data ? timeAgo(data.generatedAt) : "…"}</Text>
 
       {error ? <Text style={styles.accentText}>rpc error: {error}</Text> : null}
       {!data && !error ? <Text style={styles.dim}>loading…</Text> : null}
