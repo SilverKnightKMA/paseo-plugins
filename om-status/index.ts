@@ -186,7 +186,11 @@ export default function contribute(plugin: PluginContext) {
   plugin.addTimelineTransformer({
     id: "om-history-transformer",
     query: { itemType: "compaction" },
-    transform: ({ item }) => ({
+    // v1.3.1: chỉ card hóa compaction HOÀN TẤT — item "loading" đi trước từng bị
+    // thay thành card thứ hai y hệt (2 card liền kề, giống hệt số liệu).
+    transform: ({ item }) => {
+      if (item.status !== "completed") return undefined;
+      return {
       items: [
         {
           type: "plugin" as const,
@@ -201,7 +205,8 @@ export default function contribute(plugin: PluginContext) {
           },
         },
       ],
-    }),
+      };
+    },
   });
   plugin.addTimelineRenderer({
     kind: "om-history",

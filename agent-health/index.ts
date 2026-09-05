@@ -6,6 +6,7 @@ import { z } from "zod";
 import { GetStateRpc, ZwEventSchema, AgentRowSchema, StuckQueueSchema } from "./rpc.js";
 import { HealthPanel } from "./panel.client.js";
 import { SubagentNoticeCard, type SubagentNoticeData } from "./subagent-notice.client.js";
+import { MutedAbortCard } from "./muted-abort.client.js";
 
 interface RawZwEvent {
   ts?: unknown;
@@ -183,6 +184,27 @@ export default function contribute(plugin: PluginContext) {
       tone: z.enum(["ok", "info", "warn"]),
     }),
     Component: SubagentNoticeCard,
+  });
+
+  // ── muted abort card ─────────────────────────────────────────────────
+  // "[System Error] This operation was aborted (stopReason=error …)" —
+  // node-fetch AbortError bị adapter pi gán nhầm stopReason=error vì signal
+  // user-abort chưa kịp được đánh dấu. Chỉ hiển thị; transcript giữ nguyên.
+  plugin.addTimelineTransformer({
+    id: "muted-abort-transformer",
+    query: { itemType: "error" },
+    transform: ({ item }) => {
+      if (item.type !== "error") return undefined;
+      if (!/operation was aborted/i.test(item.message)) return undefined;
+      return { items: [{ type: "plugin" as const, kind: "muted-abort", version: 1, data: { message: item.message } }] };
+    },
+  });
+
+  plugin.addTimelineRenderer({
+    kind: "muted-abort",
+    version: 1,
+    schema: z.object({ message: z.string() }),
+    Component: MutedAbortCard,
   });
 
   return () => {};
