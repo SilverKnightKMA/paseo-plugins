@@ -1,0 +1,31 @@
+# CI gate for paseo-plugins: typecheck every plugin (no runtime tests —
+# runtime deps are zero, the daemon hosts the plugin SDK). This tsc job is
+# the merge bar; auto-merge.yml merges dependabot PRs only when green.
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: [agent-health, om-panel, om-status]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: install + typecheck ${{ matrix.plugin }}
+        working-directory: ${{ matrix.plugin }}
+        run: |
+          npm ci --include=dev
+          npx tsc --noEmit

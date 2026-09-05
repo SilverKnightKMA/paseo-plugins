@@ -1,0 +1,50 @@
+# Dependency auto-upgrade for paseo-plugins.
+# devDependencies only — runtime deps are zero (plugins import
+# @getpaseo/plugin + node:* builtins; the daemon resolves those at runtime).
+# @getpaseo/plugin is PINNED to the daemon version (0.7.2): bumping types
+# ahead of the runtime daemon would be type-drift, so it is ignored here.
+# PRs are auto-merged by auto-merge.yml once the tsc CI gate is green.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /agent-health
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(deps agent-health)"
+    labels: [automated, dependencies]
+    ignore:
+      - dependency-name: "@getpaseo/plugin"
+    groups:
+      agent-health-dev-deps:
+        patterns: ["*"]
+        update-types: [minor, patch]
+  - package-ecosystem: npm
+    directory: /om-panel
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(deps om-panel)"
+    labels: [automated, dependencies]
+    ignore:
+      - dependency-name: "@getpaseo/plugin"
+    groups:
+      om-panel-dev-deps:
+        patterns: ["*"]
+        update-types: [minor, patch]
+  - package-ecosystem: npm
+    directory: /om-status
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(deps om-status)"
+    labels: [automated, dependencies]
+    ignore:
+      - dependency-name: "@getpaseo/plugin"
+    groups:
+      om-status-dev-deps:
+        patterns: ["*"]
+        update-types: [minor, patch]
