@@ -3,6 +3,7 @@
 // plugin một (git source:plugin/path) — không import chéo được lúc runtime.
 // Repo-level check-shared-ui.py + bước CI ép 2 bản phải giống hệt nhau:
 // sửa ở đây thì copy sang bản kia trong CÙNG commit, nếu không CI đỏ.
+import React from "react";
 import { Text, View, Pressable } from "react-native";
 import type { ReactNode } from "react";
 
