@@ -16,7 +16,9 @@ interface RawZwEvent {
   agentId?: unknown;
 }
 
-function readZombieWatchdog(limit: number): { events: unknown[]; counts: Record<string, number> } {
+type ZwEventLike = { ts: string; code: string; idleMs?: number | null; agentId?: string | null };
+
+function readZombieWatchdog(limit: number): { events: ZwEventLike[]; counts: Record<string, number> } {
   const file = path.join(os.homedir(), ".pi", "agent", "zombie-watchdog.jsonl");
   const events: { ts: string; code: string; idleMs: number | null; agentId: string | null }[] = [];
   const counts: Record<string, number> = {};
