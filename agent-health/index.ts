@@ -219,24 +219,31 @@ export default function contribute(plugin: PluginContext) {
     Component: SubagentNoticeCard,
   });
 
-  // ── muted abort card ─────────────────────────────────────────────────
-  // "[System Error] This operation was aborted (stopReason=error …)" —
-  // node-fetch AbortError bị adapter pi gán nhầm stopReason=error vì signal
-  // user-abort chưa kịp được đánh dấu. Chỉ hiển thị; transcript giữ nguyên.
+  // ── abort cards (v2, 2026-09-05) ─────────────────────────────────────
+  // RCA hôm nay: stopReason=error + "operation was aborted" = undici
+  // AbortError do zaicp relay đứt stream GIỮA CHỪNG (daemon log turn_failed,
+  // đã xảy ra ~1 lần/giờ suốt 2 ngày) — turn chết thật, phải hiện warning
+  // để phân biệt "chết" với "treo". "Request aborted"/stopReason=aborted =
+  // chủ động hủy (user STOP hoặc daemon interrupt-and-replace khi child
+  // notify đến) — muted một dòng là đủ. Render-layer; transcript giữ nguyên.
   plugin.addTimelineTransformer({
     id: "muted-abort-transformer",
     query: { itemType: "error" },
     transform: ({ item }) => {
       if (item.type !== "error") return undefined;
-      if (!/operation was aborted/i.test(item.message)) return undefined;
-      return { items: [{ type: "plugin" as const, kind: "muted-abort", version: 1, data: { message: item.message } }] };
+      const msg: string = item.message ?? "";
+      if (!/operation was aborted/i.test(msg) && !/request aborted/i.test(msg)) return undefined;
+      const cls = /operation was aborted/i.test(msg) && /stopReason\s*=\s*error/i.test(msg)
+        ? ("relay-drop" as const)
+        : ("superseded" as const);
+      return { items: [{ type: "plugin" as const, kind: "muted-abort", version: 2, data: { message: msg, cls } }] };
     },
   });
 
   plugin.addTimelineRenderer({
     kind: "muted-abort",
-    version: 1,
-    schema: z.object({ message: z.string() }),
+    version: 2,
+    schema: z.object({ message: z.string(), cls: z.enum(["relay-drop", "superseded"]) }),
     Component: MutedAbortCard,
   });
 
