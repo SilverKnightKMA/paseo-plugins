@@ -3,6 +3,7 @@ import { Text, View, Pressable, TextInput } from "react-native";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin";
 import { useRpc } from "@getpaseo/plugin";
 import { GetOmStatusRpc } from "./rpc.js";
+import { OmCard, OmChip, OmChipRow, OmHeader, OM_RADIUS_INPUT, omViaSuffix } from "./ui.js";
 
 const POLL_MS = 2000;
 
@@ -39,62 +40,43 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
     : sessions;
   const chips = q || expanded ? filtered : filtered.slice(0, SHOW_RECENT);
   const hidden = q || expanded ? 0 : filtered.length - chips.length;
-  const label = (s: { sessionId: string; title: string | null }): string =>
-    s.title ? `${s.title.slice(0, 24)}` : s.sessionId.slice(0, 8);
 
   return (
-    <View style={{ padding: 12, gap: 8 }}>
+    <View style={{ padding: 12, gap: 8, backgroundColor: c.surface0 }}>
       {data == null ? (
-        <Text style={{ color: props.theme.colors.foregroundMuted }}>loading…</Text>
+        <Text style={{ color: c.foregroundMuted }}>loading…</Text>
       ) : !data.present ? (
-        <View style={{ backgroundColor: c.surface1, borderRadius: 6, padding: 10 }}>
+        <OmCard c={c} noRail>
           <Text style={{ fontSize: 13, color: c.foreground }}>OM chưa chạy trong workspace này</Text>
           <Text style={{ fontSize: 12, color: c.foregroundMuted, marginTop: 4 }}>
             {data.note ?? "/om on trong session để bật observational-memory — panel này sẽ tự cập nhật."}
           </Text>
-        </View>
+        </OmCard>
       ) : (
         <>
-          <View
-            style={{
-              backgroundColor: c.surface1,
-              borderRadius: 6,
-              padding: 10,
-              flexDirection: "row",
-              justifyContent: "space-between",
-            }}
-          >
-            <Text style={{ fontSize: 11, color: c.foregroundMuted, flex: 1 }} numberOfLines={1}>
-              {data.resolved?.agentTitle ? `${data.resolved.agentTitle.slice(0, 30)} · ` : ""}
-              {data.resolved?.via === "explicit" ? "đang chọn" : data.resolved?.via === "agent" ? "agent active" : ""}
-              {data.resolved && data.resolved.via !== "explicit" ? ` · ${(data.resolved.sessionId ?? "?").slice(0, 8)}` : ""}
-            </Text>
-            <Text style={{ fontSize: 11, color: c.foregroundMuted }}>
-              {data.sessions.length > 1 ? `${data.sessions.length} sessions` : ""}
-            </Text>
-          </View>
+          <OmHeader
+            c={c}
+            rail={stale ? c.statusWarning : c.accent}
+            title={`${data.resolved?.agentTitle ? `${data.resolved.agentTitle.slice(0, 30)} · ` : ""}session ${(data.resolved?.sessionId ?? "?").slice(0, 8)}${omViaSuffix(data.resolved?.via)}`}
+            dim={
+              data.sessions.length > 1
+                ? [`${data.sessions.length} sessions · live · cập nhật ${data.ageSec ?? "?"}s trước · poll ${POLL_MS / 1000}s`]
+                : [`live · cập nhật ${data.ageSec ?? "?"}s trước · poll ${POLL_MS / 1000}s`]
+            }
+          />
           {sessions.length > 1 ? (
             <View style={{ marginBottom: 8, gap: 6 }}>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+              <OmChipRow>
                 {chips.map((s) => {
                   const isSel = data?.resolved?.sessionId === s.sessionId;
                   return (
-                    <Pressable
+                    <OmChip
                       key={s.sessionId}
+                      c={c}
+                      active={isSel}
                       onPress={() => setPicked(isSel ? null : s.sessionId)}
-                      style={{
-                        backgroundColor: isSel ? c.surface2 : c.surface1,
-                        borderColor: isSel ? c.accent : c.border,
-                        borderWidth: 1,
-                        borderRadius: 999,
-                        paddingHorizontal: 10,
-                        paddingVertical: 4,
-                      }}
-                    >
-                      <Text style={{ color: isSel ? c.accent : c.foregroundMuted, fontSize: 11 }} numberOfLines={1}>
-                        {label(s)}
-                      </Text>
-                    </Pressable>
+                      label={s.title ? s.title.slice(0, 24) : s.sessionId.slice(0, 8)}
+                    />
                   );
                 })}
                 {hidden > 0 ? (
@@ -112,7 +94,7 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
                     <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>thu gọn</Text>
                   </Pressable>
                 ) : null}
-              </View>
+              </OmChipRow>
               <TextInput
                 value={search}
                 onChangeText={setSearch}
@@ -122,7 +104,7 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
                   backgroundColor: c.surface1,
                   borderColor: c.border,
                   borderWidth: 1,
-                  borderRadius: 6,
+                  borderRadius: OM_RADIUS_INPUT,
                   paddingHorizontal: 8,
                   paddingVertical: 4,
                   color: c.foreground,
@@ -131,38 +113,29 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
               />
             </View>
           ) : null}
-          <View
-            style={{
-              backgroundColor: props.theme.colors.surface1,
-              borderLeftWidth: 3,
-              borderLeftColor: stale ? props.theme.colors.statusWarning : props.theme.colors.accent,
-              borderRadius: 6,
-              padding: 10,
-            }}
-          >
+          <OmCard c={c} rail={stale ? c.statusWarning : c.accent}>
             {data.lines.map((line, i) => (
               <Text
                 key={i}
                 style={{
                   fontSize: 12,
                   fontFamily: "monospace",
-                  color: line.trim().length === 0 ? "transparent" : props.theme.colors.foreground,
+                  color: line.trim().length === 0 ? "transparent" : c.foreground,
                 }}
               >
                 {line.length === 0 ? " " : line}
               </Text>
             ))}
-            <Text style={{ fontSize: 11, color: props.theme.colors.foregroundMuted, marginTop: 6 }}>
-              {stale ? "⚠ không có event mới" : "live"} · cập nhật {data.ageSec ?? "?"}s trước · poll {POLL_MS / 1000}s
-              {data.sessionId ? ` · session ${data.sessionId.slice(0, 8)}` : ""}
+            <Text style={{ fontSize: 11, color: c.foregroundMuted, marginTop: 6 }}>
+              {stale ? "⚠ không có event mới" : "live"}
             </Text>
-          </View>
+          </OmCard>
 
-          <Text style={{ fontSize: 12, fontWeight: "600" as const, color: props.theme.colors.foreground }}>
+          <Text style={{ fontSize: 12, fontWeight: "600" as const, color: c.foreground }}>
             Sự kiện gần đây (mới nhất trước)
           </Text>
           {data.events.map((e, i) => (
-            <Text key={i} style={{ fontSize: 12, color: props.theme.colors.foregroundMuted }}>
+            <Text key={i} style={{ fontSize: 12, color: c.foregroundMuted }}>
               {e.ts.slice(11, 19)} · {e.text.split("\n")[0]}
             </Text>
           ))}
