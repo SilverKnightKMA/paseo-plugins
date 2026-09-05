@@ -20,7 +20,7 @@ def digest(p: Path) -> str:
 
 def main() -> int:
     if not all(p.exists() for p in FILES):
-        print("FAIL: thiếu ui.tsx —", [str(p) for p in FILES if not p.exists()])
+        print("FAIL: ui.tsx missing —", [str(p) for p in FILES if not p.exists()])
         return 1
     hashes = {p: digest(p) for p in FILES}
     if len(set(hashes.values())) != 1:

@@ -6,7 +6,7 @@ export type MutedAbortData = {
   /**
    * relay-drop — stopReason=error + undici AbortError: the provider/proxy
    *   dropped the streaming connection mid-turn (zaicp relay flap). The turn
-   *   died; nothing is queued. Retrying ("tiếp tục") resumes from the last
+   *   died; nothing is queued. Retrying ("resume") resumes from the last
    *   saved state. Must be VISIBLE or the agent looks hung.
    * superseded — stopReason=aborted / "Request aborted": the turn was cut on
    *   purpose (user stop, or daemon interrupt-and-replace when a child
@@ -36,7 +36,7 @@ export function MutedAbortCard(props: PluginTimelineItemProps<MutedAbortData>) {
     );
   }
 
-  // relay-drop: warning card — distinguish "chết" from "treo" at a glance.
+  // relay-drop: warning card — tell "dead" from "hung" at a glance.
   const model = modelOf(d.message);
   return (
     <View
@@ -58,7 +58,7 @@ export function MutedAbortCard(props: PluginTimelineItemProps<MutedAbortData>) {
           request dropped (provider/relay) — network issue, no data lost
         </Text>
         <Text style={{ color: c.foregroundMuted, fontSize: 12, lineHeight: 17 }}>
-          type "tiếp tục" to resume from the last checkpoint{model ? ` · ${model}` : ""}
+          type "resume" to roll from the last checkpoint{model ? ` · ${model}` : ""}
         </Text>
       </View>
     </View>

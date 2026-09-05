@@ -171,7 +171,7 @@ export default function contribute(plugin: PluginContext) {
         generatedAt: new Date().toISOString(),
       };
     } catch (err) {
-      return { present: false, workspace: null, sessions: [], note: `scan lỗi: ${String(err)}`, generatedAt: new Date().toISOString() };
+      return { present: false, workspace: null, sessions: [], note: `scan failed: ${String(err)}`, generatedAt: new Date().toISOString() };
     }
   });
 

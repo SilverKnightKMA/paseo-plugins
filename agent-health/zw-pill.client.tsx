@@ -115,7 +115,7 @@ export function ZwPill(props: PluginComposerPillProps) {
       >
         <Text style={{ color: mine ? c.statusDanger : c.statusWarning, fontWeight: "700" as const, fontSize: 12 }}>⚠</Text>
         <Text style={{ color: mine ? c.statusDanger : c.statusWarning, fontSize: 12, fontWeight: "700" as const }}>
-          {mine ? "ZOMBIE — bấm STOP" : `zw ${who}`}
+          {mine ? "ZOMBIE — press STOP" : `zw ${who}`}
         </Text>
         <Text style={{ color: c.foregroundMuted, fontFamily: "monospace", fontSize: 10 }}>{data.code}</Text>
       </View>

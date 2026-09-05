@@ -122,7 +122,7 @@ async function readOmStatus(
     for (const sessionId of sessionDirs) {
       try {
         const mtime = (await stat(path.join(memoryDir, sessionId, "om-status.json"))).mtimeMs;
-        // topic count giống om-panel listSessions: *.md trừ INDEX.md
+        // topic count mirrors om-panel listSessions: *.md minus INDEX.md
         let topicFiles = 0;
         try {
           topicFiles = (await readdir(path.join(memoryDir, sessionId), { withFileTypes: true }))

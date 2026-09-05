@@ -16,7 +16,7 @@ const POLL_MS = 30_000;
 export function OmPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
   const getState = useRpc(GetOmStateRpc);
   const [data, setData] = useState<OmPanelState | null>(null);
-  const [picked, setPicked] = useState<string | null>(null); // override từ switcher
+  const [picked, setPicked] = useState<string | null>(null); // override from the switcher
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -47,7 +47,7 @@ export function OmPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
           ...(resolved?.agentTitle ? [`agent: ${resolved.agentTitle}`] : []),
           ...(sel ? [`${sel.topicFiles} topics · ${sel.totalKb} KB`] : [data?.note ?? "…"]),
           ...(data
-            ? [`live · cập nhật ${sel ? omTimeAgo(sel.lastModified) : "?"} · poll ${POLL_MS / 1000}s`]
+            ? [`live · updated ${sel ? omTimeAgo(sel.lastModified) : "?"} · poll ${POLL_MS / 1000}s`]
             : []),
         ]}
       />
