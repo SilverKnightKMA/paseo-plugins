@@ -16,6 +16,12 @@ updates:
     labels: [automated, dependencies]
     ignore:
       - dependency-name: "@getpaseo/plugin"
+      # react/react-native are pinned to the @getpaseo/plugin@0.7.2 peer set
+      # (react 19.1.0 / react-native 0.81.5). react-native 0.87+ peer-requires
+      # react >=19.2.3, which conflicts with the SDK peer — unresolvable until
+      # the daemon ships a newer SDK, so stop proposing these bumps.
+      - dependency-name: "react"
+      - dependency-name: "react-native"
     groups:
       agent-health-dev-deps:
         patterns: ["*"]
@@ -30,6 +36,12 @@ updates:
     labels: [automated, dependencies]
     ignore:
       - dependency-name: "@getpaseo/plugin"
+      # react/react-native are pinned to the @getpaseo/plugin@0.7.2 peer set
+      # (react 19.1.0 / react-native 0.81.5). react-native 0.87+ peer-requires
+      # react >=19.2.3, which conflicts with the SDK peer — unresolvable until
+      # the daemon ships a newer SDK, so stop proposing these bumps.
+      - dependency-name: "react"
+      - dependency-name: "react-native"
     groups:
       om-panel-dev-deps:
         patterns: ["*"]
@@ -44,6 +56,12 @@ updates:
     labels: [automated, dependencies]
     ignore:
       - dependency-name: "@getpaseo/plugin"
+      # react/react-native are pinned to the @getpaseo/plugin@0.7.2 peer set
+      # (react 19.1.0 / react-native 0.81.5). react-native 0.87+ peer-requires
+      # react >=19.2.3, which conflicts with the SDK peer — unresolvable until
+      # the daemon ships a newer SDK, so stop proposing these bumps.
+      - dependency-name: "react"
+      - dependency-name: "react-native"
     groups:
       om-status-dev-deps:
         patterns: ["*"]
