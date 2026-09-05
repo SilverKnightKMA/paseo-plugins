@@ -24,10 +24,10 @@ export function SubagentNoticeCard(props: PluginTimelineItemProps<SubagentNotice
   const c = props.theme.colors;
   const rail = d.tone === "ok" ? c.statusSuccess : d.tone === "warn" ? c.statusWarning : c.accent;
 
-  // tách câu hint cuối (bắt đầu bằng "Dùng "/"Use ") để hạ cấp visual
+  // split the trailing hint line (starts with "Use ") to downgrade its visual weight
   const bodyLines = d.body.split("\n");
   const lastLine = bodyLines[bodyLines.length - 1].trim();
-  const isHint = /^(dùng|use)\s/i.test(lastLine) && bodyLines.length > 1;
+  const isHint = /^use\s/i.test(lastLine) && bodyLines.length > 1;
   const body = isHint ? bodyLines.slice(0, -1).join("\n").trim() : d.body;
   const hint = isHint ? lastLine : null;
 

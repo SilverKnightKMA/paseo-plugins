@@ -86,8 +86,8 @@ function listSessions(memoryDir: string, indexLines: number): { briefs: SessionB
       topicFiles: topics.length,
       totalKb: Math.round(totalBytes / 1024),
       lastModified: newestMs > 0 ? new Date(newestMs).toISOString() : null,
-      active: false, // đánh dấu ở caller sau khi resolve
-      title: null, // điền từ live/cache ở caller
+      active: false, // set by the caller after resolution
+      title: null, // filled from live/cache at the caller
     };
     briefs.push(brief);
     byId.set(entry.name, { ...brief, indexHead, topics });
@@ -104,13 +104,13 @@ export default function contribute(plugin: PluginContext) {
       if (!ws?.workspaceDirectory) ws = await handle.refresh();
       const directory = ws?.workspaceDirectory ?? null;
       if (!directory) {
-        return { present: false, workspace: null, sessions: [], note: "workspace directory chưa xác định được", generatedAt: new Date().toISOString() };
+        return { present: false, workspace: null, sessions: [], note: "workspace directory not resolved", generatedAt: new Date().toISOString() };
       }
       const memoryDir = path.join(directory, ".memory");
       const { briefs, byId } = listSessions(memoryDir, input.indexLines);
 
-      // titles: live từ agents.list() + cache cho session đã chết (chung file
-      // cache với om-status — nguồn chân lý là title Paseo của agent)
+      // titles: live from agents.list() + cache for dead sessions (shares the
+      // cache file with om-status — source of truth is the Paseo agent title)
       const liveTitles = new Map<string, string>();
       try {
         const res = await context.paseo.agents.list();
@@ -147,8 +147,8 @@ export default function contribute(plugin: PluginContext) {
           via = "newest";
         }
       } else {
-        // explicit (đang chọn): tra lại agent của session để giữ dòng "agent: X"
-        // — session đã chết (không còn agent) thì title vẫn có từ cache chip.
+        // explicit (user-picked): look the session's agent back up to keep the "agent: X"
+        // line — for dead sessions the title still comes from the chip cache.
         try {
           const res = await context.paseo.agents.list();
           agent = unwrapAgents(res.entries).find((a) => a.runtimeInfo?.sessionId === sessionId) ?? null;
@@ -167,7 +167,7 @@ export default function contribute(plugin: PluginContext) {
         resolved,
         session,
         sessions,
-        note: session ? null : sessionId ? "session này chưa có topic files (OM chưa ghi gì)" : "chưa có session nào trong .memory",
+        note: session ? null : sessionId ? "this session has no topic files yet (OM has written nothing)" : "no sessions in .memory",
         generatedAt: new Date().toISOString(),
       };
     } catch (err) {

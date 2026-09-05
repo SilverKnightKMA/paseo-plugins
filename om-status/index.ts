@@ -37,7 +37,7 @@ type AgentLike = {
   workspaceId?: string | null;
   status?: string | null;
   updatedAt?: string | null;
-  /** gần "focus" nhất phía server: agent nhận user message gần nhất */
+  /** most "focused" server-side: the agent that received the latest user message */
   lastUserMessageAt?: string | null;
   title?: string | null;
   runtimeInfo?: { sessionId?: string | null } | null;
@@ -63,9 +63,9 @@ async function readOmStatus(
     let ws = handle.current();
     if (!ws?.workspaceDirectory) ws = await handle.refresh();
     const directory = ws?.workspaceDirectory ?? null;
-    if (!directory) return { ...empty, note: "workspace directory chưa xác định được" };
+    if (!directory) return { ...empty, note: "workspace directory not resolved" };
 
-    // danh sách agent 1 lần — dùng cho resolution + map sessionId → title
+    // one agents.list() call — used for resolution + the sessionId → title map
     let agents: AgentLike[] = [];
     try {
       agents = unwrapAgents((await context.paseo.agents.list()).entries);
@@ -108,15 +108,15 @@ async function readOmStatus(
       return {
         ...empty,
         workspace: directory,
-        note: input.agentId ? "agent chưa có runtimeInfo (đang khởi động / chưa chạy turn nào)" : "không tìm thấy agent active nào có runtimeInfo",
+        note: input.agentId ? "agent has no runtimeInfo yet (starting up / no turn run so far)" : "no active agent with runtimeInfo found",
       };
     }
 
     // 2) enumerate per-session files for the side list (display only)
     const memoryDir = path.join(directory, ".memory");
     const sessionDirs = (await readdir(memoryDir, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name);
-    // title cache: giữ tên cho session đã chết (agent process gone) — live map
-    // thắng cache; cả hai plugin ghi vào cùng file ~/.paseo/plugin-data/
+    // title cache: keeps names for dead sessions (agent process gone) — the live
+    // map beats the cache; both plugins write the same ~/.paseo/plugin-data/ file
     const titleCache = mergeLiveTitles(titleBySession);
     const sessions: { sessionId: string; ageSec: number; title: string | null; topicFiles: number; active: boolean }[] = [];
     for (const sessionId of sessionDirs) {
@@ -151,7 +151,7 @@ async function readOmStatus(
         workspace: directory ? path.basename(directory) : directory,
         resolved,
         sessions,
-        note: "session này chưa ghi om-status.json (OM off hoặc chưa có event)",
+        note: "this session has no om-status.json yet (OM off or no events)",
       };
     }
     const data = parsed.data;
@@ -204,8 +204,8 @@ export default function contribute(plugin: PluginContext) {
   plugin.addTimelineTransformer({
     id: "om-history-transformer",
     query: { itemType: "compaction" },
-    // v1.3.1: chỉ card hóa compaction HOÀN TẤT — item "loading" đi trước từng bị
-    // thay thành card thứ hai y hệt (2 card liền kề, giống hệt số liệu).
+    // v1.3.1: only card-ify COMPLETED compactions — the "loading" item that comes
+    // first used to be replaced by an identical second card (2 adjacent dupes).
     transform: ({ item }) => {
       if (item.status !== "completed") return undefined;
       return {

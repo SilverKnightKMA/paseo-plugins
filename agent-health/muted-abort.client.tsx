@@ -30,7 +30,7 @@ export function MutedAbortCard(props: PluginTimelineItemProps<MutedAbortData>) {
       <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginVertical: 2 }}>
         <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>⏹</Text>
         <Text style={{ color: c.foregroundMuted, fontSize: 12 }} numberOfLines={1} ellipsizeMode="tail">
-          turn bị hủy (aborted) — không phải lỗi; tin nhắn mới đã vào hàng đợi
+          turn superseded (aborted) — not an error; a new message is queued
         </Text>
       </View>
     );
@@ -55,10 +55,10 @@ export function MutedAbortCard(props: PluginTimelineItemProps<MutedAbortData>) {
       <Text style={{ color: c.statusWarning, fontSize: 13, lineHeight: 18 }}>⚠</Text>
       <View style={{ flexDirection: "column", gap: 2, flexShrink: 1 }}>
         <Text style={{ color: c.foreground, fontSize: 12, fontWeight: "600", lineHeight: 17 }}>
-          Request bị đứt (provider/relay) — lỗi mạng, không mất dữ liệu
+          request dropped (provider/relay) — network issue, no data lost
         </Text>
         <Text style={{ color: c.foregroundMuted, fontSize: 12, lineHeight: 17 }}>
-          gõ "tiếp tục" để chạy lại từ điểm dừng{model ? ` · ${model}` : ""}
+          type "tiếp tục" to resume from the last checkpoint{model ? ` · ${model}` : ""}
         </Text>
       </View>
     </View>

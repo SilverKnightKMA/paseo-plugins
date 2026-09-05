@@ -64,7 +64,7 @@ export function startOmLive(client: PluginClientContext): () => void {
 
 const POLL_MS = 2000;
 
-/** Verdict glyph + color — theme-driven, không dùng emoji (render pink clashing). */
+/** Verdict glyph + color — theme-driven, no emoji (renders pink/clashing). */
 function verdictMark(verdict: string, c: { statusSuccess: string; statusWarning: string; foregroundMuted: string }): { glyph: string; color: string } {
   if (verdict === "healthy") return { glyph: "✓", color: c.statusSuccess };
   if (verdict === "warning") return { glyph: "!", color: c.statusWarning };

@@ -47,7 +47,7 @@ export function HealthPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
   useEffect(() => {
     void load();
     // Auto-refresh like om-status/om-panel: the panel is a live monitor, not a
-    // load-once snapshot (user request 2026-09-05 — "tự động refresh như OM").
+    // load-once snapshot (user request 2026-09-05 — "auto-refresh like OM").
     const timer = setInterval(() => void load(), POLL_MS);
     return () => clearInterval(timer);
   }, [load]);
@@ -88,7 +88,7 @@ export function HealthPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
             ⚠ ZOMBIE DETECTED — {zwAlertCode} ({timeAgo(lastZw.ts)})
           </Text>
           <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
-            {lastZw.agentId ? `agent ${lastZw.agentId.slice(0, 8)}` : "agent unknown"} · bấm STOP trên agent đó (nếu là mình)
+            {lastZw.agentId ? `agent ${lastZw.agentId.slice(0, 8)}` : "agent unknown"} · press STOP on that agent (if it is you)
           </Text>
         </View>
       ) : null}

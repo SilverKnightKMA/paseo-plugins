@@ -36,9 +36,9 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
         <Text style={{ color: c.foregroundMuted }}>loading…</Text>
       ) : !data.present ? (
         <OmCard c={c} noRail>
-          <Text style={{ fontSize: 13, color: c.foreground }}>OM chưa chạy trong workspace này</Text>
+          <Text style={{ fontSize: 13, color: c.foreground }}>OM not running in this workspace</Text>
           <Text style={{ fontSize: 12, color: c.foregroundMuted, marginTop: 4 }}>
-            {data.note ?? "/om on trong session để bật observational-memory — panel này sẽ tự cập nhật."}
+            {data.note ?? "/om on in the session to enable observational-memory — this panel will update itself."}
           </Text>
         </OmCard>
       ) : (
@@ -58,7 +58,7 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
                     }% · $${data.summary.sessionCostUsd.toFixed(2)}`,
                   ]
                 : []),
-              `live · cập nhật ${data.ageSec ?? "?"}s trước · poll ${POLL_MS / 1000}s`,
+              `live · updated ${data.ageSec ?? "?"}s ago · poll ${POLL_MS / 1000}s`,
             ]}
           />
           <OmSessionPicker
@@ -103,16 +103,16 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
               );
             })}
             {stale ? (
-              <Text style={{ fontSize: 11, color: c.statusWarning, marginTop: 6 }}>⚠ không có event mới {data.ageSec ?? "?"}s rồi</Text>
+              <Text style={{ fontSize: 11, color: c.statusWarning, marginTop: 6 }}>⚠ no new events for {data.ageSec ?? "?"}s</Text>
             ) : null}
           </OmCard>
 
           <Text style={{ fontSize: 12, fontWeight: "600" as const, color: c.foreground }}>
-            Sự kiện gần đây (mới nhất trước)
+            Recent events (newest first)
           </Text>
           {data.events.map((e, i) => (
             <Text key={i} style={{ fontSize: 12, color: c.foregroundMuted }}>
-              {e.ts.slice(11, 19)} · {e.text.split("\n")[0]}
+              {new Date(e.ts).toLocaleTimeString("en-GB", { hour12: false })} · {e.text.split("\n")[0]}
             </Text>
           ))}
         </>

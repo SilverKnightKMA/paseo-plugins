@@ -86,7 +86,7 @@ export function OmHistoryCard(props: PluginTimelineItemProps<{ compaction: { sta
           </Text>
         ) : (
           <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
-            {empty ? "om off / chưa có dữ liệu" : "đang tải…"}
+            {empty ? "om off / no data yet" : "loading…"}
           </Text>
         )}
         {data?.events && data.events.length > 0 ? (

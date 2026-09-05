@@ -1,13 +1,13 @@
 // ui.tsx — SHARED UI kit cho om-status + om-panel (v1.0.2).
-// Byte-identical copy tồn tại ở CẢ 2 thư mục plugin vì daemon checkout từng
-// plugin một (git source:plugin/path) — không import chéo được lúc runtime.
-// Repo-level check-shared-ui.py + bước CI ép 2 bản phải giống hệt nhau:
-// sửa ở đây thì copy sang bản kia trong CÙNG commit, nếu không CI đỏ.
+// A byte-identical copy lives in BOTH plugin dirs because the daemon checks
+// each plugin out separately (git source:plugin/path) — no cross-import at
+// runtime. Repo-level check-shared-ui.py + a CI step enforce the two copies
+// stay identical: edit here, copy to the other in the SAME commit or CI red.
 import React, { useState } from "react";
 import { Text, View, Pressable, TextInput } from "react-native";
 import type { ReactNode } from "react";
 
-/** Màu theme mà kit này cần — structural, không kéo types của SDK vào. */
+/** Theme colors this kit needs — structural type, no SDK types pulled in. */
 export type OmColors = {
   surface0: string;
   surface1: string;
@@ -22,24 +22,24 @@ export type OmColors = {
 export const OM_RADIUS_CARD = 8;
 export const OM_RADIUS_INPUT = 6;
 
-/** "42s ago / 5m ago / 3h ago / 2d ago" — chung cho mọi footer. */
+/** "42s ago / 5m ago / 3h ago / 2d ago" — shared footer format. */
 export function omTimeAgo(iso: string | null): string {
   if (!iso) return "—";
   const then = Date.parse(iso);
   if (!Number.isFinite(then)) return iso;
   const s = Math.max(0, Math.floor((Date.now() - then) / 1000));
-  if (s < 90) return `${s}s trước`;
-  if (s < 5400) return `${Math.floor(s / 60)}m trước`;
-  if (s < 129600) return `${Math.floor(s / 3600)}h trước`;
-  return `${Math.floor(s / 86400)}d trước`;
+  if (s < 90) return `${s}s ago`;
+  if (s < 5400) return `${Math.floor(s / 60)}m ago`;
+  if (s < 129600) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
 }
 
-/** Cách session đang hiển thị được resolve —thống nhất nhãn 2 panel. */
+/** How the displayed session was resolved — labels shared by both panels. */
 export const OM_VIA_LABEL: Record<string, string> = {
-  explicit: "đang chọn",
-  agent: "agent của pill",
+  explicit: "selected",
+  agent: "pill agent",
   "workspace-active": "agent active",
-  newest: "mới nhất",
+  newest: "newest",
 };
 
 export function omViaSuffix(via: string | null | undefined): string {
@@ -47,7 +47,7 @@ export function omViaSuffix(via: string | null | undefined): string {
   return ` (${OM_VIA_LABEL[via] ?? via})`;
 }
 
-/** Card nền surface1 + rail trái 3px (mặc định accent, đổi màu qua prop). */
+/** Card: surface1 background + 3px left rail (accent default, override via prop). */
 export function OmCard(props: {
   c: OmColors;
   rail?: string;
@@ -71,7 +71,7 @@ export function OmCard(props: {
   );
 }
 
-/** Header card chuẩn: title 13/600 + các dòng dim 11. */
+/** Standard header card: title 13/600 + dim lines 11. */
 export function OmHeader(props: { c: OmColors; title: string; dim?: string[]; rail?: string }) {
   const { c, title, dim, rail } = props;
   return (
@@ -88,7 +88,7 @@ export function OmHeader(props: { c: OmColors; title: string; dim?: string[]; ra
   );
 }
 
-/** Hàng chip session — pill 999, mặc định surface1, đang chọn surface2+accent. */
+/** Session chip row — pill radius 999, surface1 default, selected surface2+accent. */
 export function OmChipRow(props: { children: ReactNode; style?: object }) {
   return <View style={{ flexDirection: "row" as const, flexWrap: "wrap" as const, gap: 6, ...props.style }}>{props.children}</View>;
 }
@@ -119,7 +119,7 @@ export function OmChip(props: {
   );
 }
 
-/** Dòng title section trong card. */
+/** Section title line inside a card. */
 export function OmSection(props: { c: OmColors; children: ReactNode }) {
   return (
     <Text style={{ color: props.c.foreground, fontSize: 12, fontWeight: "600" as const, marginTop: 8, marginBottom: 4 }}>
@@ -128,15 +128,15 @@ export function OmSection(props: { c: OmColors; children: ReactNode }) {
   );
 }
 
-const OM_PICKER_SHOW = 4; // số chip hiển thị — flood control, phần còn lại sau search
+const OM_PICKER_SHOW = 4; // chips shown up front — flood control, the rest behind search
 
-/** Nhãn chip dùng chung: '● tên · Nt' / 'tên · Nt'. */
+/** Shared chip label: '● name · Nt' / 'name · Nt'. */
 export function omChipLabel(active: boolean, title: string | null, sessionId: string, topicFiles: number): string {
   return `${active ? "● " : ""}${title ? title.slice(0, 24) : sessionId.slice(0, 8)} · ${topicFiles}t`;
 }
 
-/** Khối chọn session dùng chung: chips + search + flood control.
- *  Tự quản state search/expand; sessions < 2 thì không render gì. */
+/** Shared session picker block: chips + search + flood control.
+ *  Owns its search/expand state; renders nothing when sessions < 2. */
 export function OmSessionPicker(props: {
   c: OmColors;
   sessions: { sessionId: string; label: string; active: boolean }[];
@@ -168,18 +168,18 @@ export function OmSessionPicker(props: {
         ))}
         {hidden > 0 ? (
           <Pressable onPress={() => setExpanded(true)} style={moreStyle}>
-            <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>+{hidden} nữa…</Text>
+            <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>+{hidden} more…</Text>
           </Pressable>
         ) : expanded ? (
           <Pressable onPress={() => setExpanded(false)} style={moreStyle}>
-            <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>thu gọn</Text>
+            <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>show less</Text>
           </Pressable>
         ) : null}
       </OmChipRow>
       <TextInput
         value={search}
         onChangeText={setSearch}
-        placeholder="tìm session theo tên / id…"
+        placeholder="search session by name / id…"
         placeholderTextColor={c.foregroundMuted}
         style={{
           backgroundColor: c.surface1,

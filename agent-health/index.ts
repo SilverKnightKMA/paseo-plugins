@@ -191,7 +191,7 @@ export default function contribute(plugin: PluginContext) {
     query: { itemType: "user_message" },
     transform: ({ item }) => {
       if (item.type !== "user_message") return undefined;
-      // một user message có thể chứa nhiều envelope (drain gộp bằng "\n\n")
+      // one user message may contain multiple envelopes (drain joins with "\n\n")
       const parsedAll = parseAllSubagentNotices(item.text);
       if (parsedAll.length === 0) return undefined;
       return {
@@ -220,12 +220,13 @@ export default function contribute(plugin: PluginContext) {
   });
 
   // ── abort cards (v2, 2026-09-05) ─────────────────────────────────────
-  // RCA hôm nay: stopReason=error + "operation was aborted" = undici
-  // AbortError do zaicp relay đứt stream GIỮA CHỪNG (daemon log turn_failed,
-  // đã xảy ra ~1 lần/giờ suốt 2 ngày) — turn chết thật, phải hiện warning
-  // để phân biệt "chết" với "treo". "Request aborted"/stopReason=aborted =
-  // chủ động hủy (user STOP hoặc daemon interrupt-and-replace khi child
-  // notify đến) — muted một dòng là đủ. Render-layer; transcript giữ nguyên.
+  // Today's RCA: stopReason=error + "operation was aborted" = an undici
+  // AbortError from the zaicp relay dropping the stream MID-FLIGHT (daemon
+  // log turn_failed; happened ~1/hour for 2 days) — the turn really died,
+  // show a warning to tell "dead" apart from "hung". "Request aborted"/
+  // stopReason=aborted = a deliberate cancel (user STOP or daemon
+  // interrupt-and-replace on child notify) — one muted line is enough.
+  // Render-layer only; the transcript stays untouched.
   plugin.addTimelineTransformer({
     id: "muted-abort-transformer",
     query: { itemType: "error" },
@@ -262,7 +263,7 @@ function parseAllSubagentNotices(text: string): SubagentNoticeData[] {
   if (!trimmed.startsWith("<subagent-message")) return [];
   const blocks = trimmed.match(SUBAGENT_BLOCK_RE) ?? [];
   if (blocks.length === 0) return [];
-  // mọi block phải khớp format; nếu chỉ một phần khớp thì để nguyên pass-through
+  // every block must match the format; a partial match stays pass-through
   const parsed = blocks.map((b) => parseSubagentNotice(b));
   return parsed.every((p) => p !== null) ? (parsed as SubagentNoticeData[]) : [];
 }
@@ -286,7 +287,7 @@ function parseSubagentNotice(text: string): SubagentNoticeData | null {
   const nm = /Subagent [\w-]+ "([^"]+)" \(([0-9a-f-]{36})\)/.exec(body);
   if (nm) {
     name = nm[1];
-    body = body.replace(` "${nm[1]}" (${nm[2]})`, ` "${nm[1]}"`); // bỏ UUID lặp trong thân
+    body = body.replace(` "${nm[1]}" (${nm[2]})`, ` "${nm[1]}"`); // drop the duplicated UUID in the body
   }
   return { role, kind: label, agentId, name, body, tone };
 }

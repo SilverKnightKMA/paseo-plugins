@@ -32,7 +32,7 @@ export const GetOmStatusRpc = {
   input: z.object({
     workspaceId: z.string(),
     agentId: z.string().nullish(),
-    /** explicit override từ chips picker — thắng mọi resolution */
+    /** explicit override from the chips picker — beats every resolution */
     sessionId: z.string().nullish(),
   }),
   output: z.object({
@@ -51,7 +51,7 @@ export const GetOmStatusRpc = {
           sessionId: z.string(),
           ageSec: z.number(),
           title: z.string().nullable(),
-          /** đồng bộ chip với om-panel: số topic .md (trừ INDEX.md) + marker active */
+          /** chip sync with om-panel: .md topic count (minus INDEX.md) + active marker */
           topicFiles: z.number(),
           active: z.boolean(),
         }),

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""check-shared-ui.py — ép 2 bản ui.tsx phải byte-identical.
+"""check-shared-ui.py — enforce the two ui.tsx copies stay byte-identical.
 
-Daemon checkout từng plugin một (git source:plugin/path) nên om-status và
-om-panel không thể import chéo file runtime; bộ UI dùng chung được ship như
-2 bản copy. Script này (được CI chạy mỗi PR) fail khi ai sửa 1 bản mà quên
-bản kia — chỉnh thì phải copy sang trong cùng commit.
+The daemon checks each plugin out separately (git source:plugin/path), so
+om-status and om-panel cannot cross-import runtime files; the shared UI kit
+ships as two copies. This script (run by CI on every PR) fails when someone
+edits one copy and forgets the other — always copy over in the same commit.
 """
 import hashlib
 import sys
@@ -26,9 +26,9 @@ def main() -> int:
     if len(set(hashes.values())) != 1:
         for p, h in hashes.items():
             print(f"{p.relative_to(ROOT)}: {h}")
-        print("FAIL: om-status/ui.tsx và om-panel/ui.tsx lệch nhau — copy bản chuẩn sang bản kia trong cùng commit.")
+        print("FAIL: om-status/ui.tsx and om-panel/ui.tsx differ — copy the canonical one over in the same commit.")
         return 1
-    print(f"OK: ui.tsx đồng bộ ({list(hashes.values())[0][:12]}…)")
+    print(f"OK: ui.tsx in sync ({list(hashes.values())[0][:12]}...)")
     return 0
 
 

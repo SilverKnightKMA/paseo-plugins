@@ -8,10 +8,10 @@ import { OmCard, OmHeader, OmSection, OmSessionPicker, omChipLabel, omTimeAgo, o
 const POLL_MS = 30_000;
 
 /**
- * v2: session-first. Header giữ mốc "session đang tracked" (active marker +
- * cách resolve), chip-switcher để nhảy sang session cũ, thân panel là danh
- * sách topic files của session đang chọn. UI kit dùng chung với om-status
- * (ui.tsx) — 2 panel nhìn và cảm giác như một.
+ * v2: session-first. The header pins the tracked session (active marker +
+ * how it was resolved), the chip switcher jumps to older sessions, and the
+ * body lists the selected session's topic files. Shares the UI kit with
+ * om-status (ui.tsx) — the two panels look and feel as one.
  */
 export function OmPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
   const getState = useRpc(GetOmStateRpc);
@@ -67,7 +67,7 @@ export function OmPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
 
       {sel ? (
         <OmCard c={c} noRail>
-          <OmSection c={c}>Topic files (mới nhất trước)</OmSection>
+          <OmSection c={c}>Topic files (newest first)</OmSection>
           {sel.topics.map((t) => (
             <View key={t.file} style={{ flexDirection: "row", marginBottom: 3, gap: 8 }}>
               <Text style={{ color: c.foreground, fontSize: 12, flexShrink: 1 }} numberOfLines={1}>
@@ -78,7 +78,7 @@ export function OmPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
               </Text>
             </View>
           ))}
-          {sel.topics.length === 0 ? <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>chưa có topic nào</Text> : null}
+          {sel.topics.length === 0 ? <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>no topics yet</Text> : null}
 
           {sel.indexHead.length > 0 ? (
             <>
