@@ -51,11 +51,11 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
               ...(data.resolved?.agentTitle ? [`agent: ${data.resolved.agentTitle}`] : []),
               ...(data.summary
                 ? [
-                    `${data.summary.verdict} · obs ${data.summary.observersRunning}/${data.summary.observerSlots} · ctx ${
+                    `${data.summary.verdict} · ctx ${
                       data.summary.contextTokens != null
                         ? Math.round((data.summary.contextTokens / data.summary.contextMax) * 100)
                         : "?"
-                    }% · $${data.summary.sessionCostUsd.toFixed(2)} · ${data.summary.sessionRuns}r`,
+                    }% · $${data.summary.sessionCostUsd.toFixed(2)}`,
                   ]
                 : []),
               `live · cập nhật ${data.ageSec ?? "?"}s trước · poll ${POLL_MS / 1000}s`,
@@ -72,18 +72,36 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
             onPick={(id) => setPicked(id)}
           />
           <OmCard c={c} rail={stale ? c.statusWarning : c.accent}>
-            {data.lines.map((line, i) => (
-              <Text
-                key={i}
-                style={{
-                  fontSize: 12,
-                  fontFamily: "monospace",
-                  color: line.trim().length === 0 ? "transparent" : c.foreground,
-                }}
-              >
-                {line.length === 0 ? " " : line}
-              </Text>
-            ))}
+            {data.lines.map((line, i) => {
+              if (!line.trim()) return <View key={i} style={{ height: 6 }} />;
+              if (line.startsWith("om status — ")) {
+                return (
+                  <Text key={i} style={{ color: c.foreground, fontSize: 12, fontWeight: "600" as const, marginBottom: 2 }}>
+                    {line.slice("om status — ".length)}
+                  </Text>
+                );
+              }
+              const sub = line.startsWith("    ");
+              const t = line.trim();
+              const sep = t.indexOf(": ");
+              if (!sub && !line.startsWith("  ") && sep < 0) {
+                return (
+                  <Text key={i} style={{ color: c.foregroundMuted, fontSize: 11, fontWeight: "600" as const, marginTop: 4, marginBottom: 2 }}>
+                    {t}
+                  </Text>
+                );
+              }
+              const label = sep > 0 ? `${t.slice(0, sep + 1)}` : null;
+              const value = sep > 0 ? t.slice(sep + 2) : t;
+              return (
+                <View key={i} style={{ flexDirection: "row" as const, paddingLeft: sub ? 30 : 8, marginBottom: 1, gap: 6 }}>
+                  {label ? (
+                    <Text style={{ color: c.foregroundMuted, fontSize: 11, fontFamily: "monospace", minWidth: 100 }}>{label}</Text>
+                  ) : null}
+                  <Text style={{ color: c.foreground, fontSize: 11, fontFamily: "monospace", flexShrink: 1 }}>{value}</Text>
+                </View>
+              );
+            })}
             <Text style={{ fontSize: 11, color: c.foregroundMuted, marginTop: 6 }}>
               {stale ? "⚠ không có event mới" : "live"}
             </Text>
