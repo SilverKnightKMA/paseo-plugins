@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Text, View, Pressable, ScrollView } from "react-native";
+import { Text, View, ScrollView } from "react-native";
 import { useRpc } from "@getpaseo/plugin";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin";
 import { GetStateRpc, type AgentHealthState } from "./rpc.js";
@@ -30,13 +30,10 @@ export function HealthPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
   const getState = useRpc(GetStateRpc);
   const [data, setData] = useState<AgentHealthState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const hasDataRef = useRef(false);
 
   const load = useCallback(async () => {
-    // Background (interval) polls never flip `busy` — only the very first load does,
-    // so the button text and layout stay stable while data refreshes underneath.
-    setBusy(!hasDataRef.current);
+    // Best-effort poll: errors keep the last good snapshot on screen.
     setError(null);
     try {
       const result = await getState({ limit: 20 });
@@ -44,8 +41,6 @@ export function HealthPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
       hasDataRef.current = true;
     } catch (err) {
       setError(String(err));
-    } finally {
-      setBusy(false);
     }
   }, [getState]);
 
@@ -70,15 +65,6 @@ export function HealthPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
       row: { color: theme.colors.foreground, fontSize: 12, marginBottom: 2 },
       dim: { color: theme.colors.foregroundMuted, fontSize: 11, marginBottom: 2 },
       accentText: { color: theme.colors.statusWarning, fontSize: 11, marginBottom: 2 },
-      button: {
-        backgroundColor: theme.colors.accent,
-        borderRadius: 6,
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        alignItems: "center" as const,
-        marginBottom: 10,
-      },
-      buttonText: { color: theme.colors.accentForeground, fontSize: 12, fontWeight: "600" as const },
     }),
     [theme],
   );
@@ -106,10 +92,7 @@ export function HealthPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
           </Text>
         </View>
       ) : null}
-      <Pressable style={styles.button} onPress={() => void load()} disabled={busy}>
-        <Text style={styles.buttonText}>{busy ? "Loading…" : "Refresh"}</Text>
-      </Pressable>
-      <Text style={styles.dim}>auto-refresh every {POLL_MS / 1000}s · updated {data ? timeAgo(data.generatedAt) : "…"}</Text>
+      <Text style={styles.dim}>live · auto-refresh {POLL_MS / 1000}s · updated {data ? timeAgo(data.generatedAt) : "…"}</Text>
 
       {error ? <Text style={styles.accentText}>rpc error: {error}</Text> : null}
       {!data && !error ? <Text style={styles.dim}>loading…</Text> : null}

@@ -91,9 +91,12 @@ export function OmHistoryCard(props: PluginTimelineItemProps<{ compaction: { sta
         )}
         {data?.events && data.events.length > 0 ? (
           <Text style={{ color: c.foregroundMuted, fontSize: 11, marginTop: 2 }} numberOfLines={1}>
-            {data.events
+            {Array.from(
+              new Set(
+                data.events.slice(0, 3).map((e) => e.text.split("\n")[0].trim()),
+              ).values(),
+            )
               .slice(0, 2)
-              .map((e) => e.text.split("\n")[0])
               .join("  ·  ")}
           </Text>
         ) : null}
