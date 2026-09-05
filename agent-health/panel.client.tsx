@@ -136,6 +136,33 @@ export function HealthPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
           </View>
 
           <View style={styles.card}>
+            <Text style={styles.title}>SSE drops (sse-probe)</Text>
+            {!data.sse || !data.sse.present ? (
+              <Text style={styles.dim}>no drops recorded (extension not loaded or no aborts yet)</Text>
+            ) : (
+              <>
+                <Text style={styles.dim}>
+                  total {data.sse.total}
+                  {data.sse.byKind["suspect-sse-drop"] ? ` · suspect ${data.sse.byKind["suspect-sse-drop"]}` : ""}
+                  {data.sse.byKind["user-stop-lookalike"] ? ` · user-stop ${data.sse.byKind["user-stop-lookalike"]}` : ""}
+                  {data.sse.byKind["provider-error"] ? ` · err ${data.sse.byKind["provider-error"]}` : ""}
+                  {data.sse.lastTs ? ` · last ${timeAgo(data.sse.lastTs)}` : ""}
+                </Text>
+                {data.sse.recent.length === 0 ? (
+                  <Text style={styles.dim}>no recent events</Text>
+                ) : (
+                  [...data.sse.recent].reverse().map((d, i) => (
+                    <Text key={`${d.ts}-${i}`} style={d.kind === "suspect-sse-drop" ? styles.accentText : styles.dim}>
+                      {timeAgo(d.ts)} · {d.kind} · {d.model} · {(d.turnDurMs / 1000).toFixed(0)}s · {d.contentLen}ch
+                    </Text>
+                  ))
+                )}
+                <Text style={styles.dim}>suspect = abort on zaicp model with mid-turn content — correlate with your STOP presses</Text>
+              </>
+            )}
+          </View>
+
+          <View style={styles.card}>
             <Text style={styles.title}>Stuck queues ({data.stuckQueues.length})</Text>
             {data.stuckQueues.length === 0 ? (
               <Text style={styles.dim}>no undelivered messages older than 48h</Text>

@@ -24,6 +24,25 @@ export const ZwEventSchema = z.object({
   agentId: z.string().nullable(),
 });
 
+export const SseDropSchema = z.object({
+  ts: z.string(),
+  model: z.string(),
+  stopReason: z.string(),
+  kind: z.string(),
+  errorMessage: z.string(),
+  turnDurMs: z.number(),
+  contentLen: z.number(),
+});
+
+export const SseProbeSchema = z.object({
+  /** sse-probe.jsonl exists (the extension has run at least once) */
+  present: z.boolean(),
+  total: z.number(),
+  byKind: z.record(z.string(), z.number()),
+  lastTs: z.string().nullable(),
+  recent: z.array(SseDropSchema).default([]),
+});
+
 export const GetStateRpc = defineRpc({
   name: "agent-health.get-state",
   input: z
@@ -34,6 +53,7 @@ export const GetStateRpc = defineRpc({
     zwEvents: z.array(ZwEventSchema),
     stuckQueues: z.array(StuckQueueSchema),
     zwCounts: z.record(z.string(), z.number()),
+    sse: SseProbeSchema,
     generatedAt: z.string(),
   }),
 });

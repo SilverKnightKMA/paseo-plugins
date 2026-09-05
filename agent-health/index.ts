@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { PluginContext } from "@getpaseo/plugin";
 import { z } from "zod";
-import { GetStateRpc, GetZwAlertRpc, ZwEventSchema, AgentRowSchema, StuckQueueSchema } from "./rpc.js";
+import { GetStateRpc, GetZwAlertRpc, ZwEventSchema, AgentRowSchema, StuckQueueSchema, SseProbeSchema } from "./rpc.js";
 import { HealthPanel } from "./panel.client.js";
 import { SubagentNoticeCard, type SubagentNoticeData } from "./subagent-notice.client.js";
 import { MutedAbortCard } from "./muted-abort.client.js";
@@ -49,6 +49,53 @@ function readZombieWatchdog(limit: number): { events: ZwEventLike[]; counts: Rec
     }
   }
   return { events, counts };
+}
+
+function readSseProbe(limit: number): { present: boolean; total: number; byKind: Record<string, number>; lastTs: string | null; recent: Array<{ ts: string; model: string; stopReason: string; kind: string; errorMessage: string; turnDurMs: number; contentLen: number }> } {
+  const jsonl = path.join(os.homedir(), ".pi", "agent", "sse-probe.jsonl");
+  const summaryFile = path.join(os.homedir(), ".pi", "agent", "sse-probe.json");
+  if (!fs.existsSync(jsonl)) {
+    return { present: false, total: 0, byKind: {}, lastTs: null, recent: [] };
+  }
+  let total = 0;
+  let byKind: Record<string, number> = {};
+  let lastTs: string | null = null;
+  try {
+    const summary = JSON.parse(fs.readFileSync(summaryFile, "utf8")) as { total?: number; byKind?: Record<string, number>; lastTs?: string | null };
+    total = typeof summary.total === "number" ? summary.total : 0;
+    byKind = summary.byKind && typeof summary.byKind === "object" ? summary.byKind : {};
+    lastTs = typeof summary.lastTs === "string" ? summary.lastTs : null;
+  } catch {
+    // summary missing/corrupt — derive from the tail below
+  }
+  const recent: Array<{ ts: string; model: string; stopReason: string; kind: string; errorMessage: string; turnDurMs: number; contentLen: number }> = [];
+  try {
+    const lines = fs.readFileSync(jsonl, "utf8").split("\n").filter((l) => l.trim());
+    if (total === 0) total = lines.length;
+    for (const line of lines.slice(-limit)) {
+      try {
+        const r = JSON.parse(line) as Record<string, unknown>;
+        recent.push({
+          ts: typeof r.ts === "string" ? r.ts : "",
+          model: typeof r.model === "string" ? r.model : "(unknown)",
+          stopReason: typeof r.stopReason === "string" ? r.stopReason : "",
+          kind: typeof r.kind === "string" ? r.kind : "unknown",
+          errorMessage: typeof r.errorMessage === "string" ? r.errorMessage : "",
+          turnDurMs: typeof r.turnDurMs === "number" ? r.turnDurMs : 0,
+          contentLen: typeof r.contentLen === "number" ? r.contentLen : 0,
+        });
+      } catch {
+        // Skip malformed line.
+      }
+    }
+    if (Object.keys(byKind).length === 0) {
+      for (const r of recent) byKind[r.kind] = (byKind[r.kind] ?? 0) + 1;
+    }
+    if (!lastTs && recent.length > 0) lastTs = recent[recent.length - 1].ts;
+  } catch {
+    // unreadable jsonl — summary alone
+  }
+  return { present: true, total, byKind, lastTs, recent };
 }
 
 function readStuckQueues(): unknown[] {
@@ -136,6 +183,7 @@ export default function contribute(plugin: PluginContext) {
       agents,
       zwEvents: ZwEventSchema.array().parse(events),
       zwCounts: counts,
+      sse: SseProbeSchema.parse(readSseProbe(input.limit)),
       stuckQueues: StuckQueueSchema.array().parse(readStuckQueues()),
       generatedAt: new Date().toISOString(),
     };
