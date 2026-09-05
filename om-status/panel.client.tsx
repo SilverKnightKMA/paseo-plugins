@@ -75,7 +75,7 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
                       c={c}
                       active={isSel}
                       onPress={() => setPicked(isSel ? null : s.sessionId)}
-                      label={s.title ? s.title.slice(0, 24) : s.sessionId.slice(0, 8)}
+                      label={`${s.active ? "● " : ""}${s.title ? s.title.slice(0, 24) : s.sessionId.slice(0, 8)} · ${s.topicFiles}t`}
                     />
                   );
                 })}

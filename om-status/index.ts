@@ -118,11 +118,25 @@ async function readOmStatus(
     // title cache: giữ tên cho session đã chết (agent process gone) — live map
     // thắng cache; cả hai plugin ghi vào cùng file ~/.paseo/plugin-data/
     const titleCache = mergeLiveTitles(titleBySession);
-    const sessions: { sessionId: string; ageSec: number; title: string | null }[] = [];
+    const sessions: { sessionId: string; ageSec: number; title: string | null; topicFiles: number; active: boolean }[] = [];
     for (const sessionId of sessionDirs) {
       try {
         const mtime = (await stat(path.join(memoryDir, sessionId, "om-status.json"))).mtimeMs;
-        sessions.push({ sessionId, ageSec: Math.round((Date.now() - mtime) / 1000), title: titleFor(titleCache, sessionId, titleBySession) });
+        // topic count giống om-panel listSessions: *.md trừ INDEX.md
+        let topicFiles = 0;
+        try {
+          topicFiles = (await readdir(path.join(memoryDir, sessionId), { withFileTypes: true }))
+            .filter((f) => f.isFile() && f.name.endsWith(".md") && f.name !== "INDEX.md").length;
+        } catch {
+          // dir unreadable — count = 0
+        }
+        sessions.push({
+          sessionId,
+          ageSec: Math.round((Date.now() - mtime) / 1000),
+          title: titleFor(titleCache, sessionId, titleBySession),
+          topicFiles,
+          active: sessionId === resolved.sessionId,
+        });
       } catch {
         // no status file for this session — not listed
       }

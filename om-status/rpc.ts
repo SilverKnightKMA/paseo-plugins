@@ -45,7 +45,18 @@ export const GetOmStatusRpc = {
     summary: OmSummarySchema.nullable(),
     events: z.array(OmEventSchema),
     ageSec: z.number().nullable(),
-    sessions: z.array(z.object({ sessionId: z.string(), ageSec: z.number(), title: z.string().nullable() })).default([]),
+    sessions: z
+      .array(
+        z.object({
+          sessionId: z.string(),
+          ageSec: z.number(),
+          title: z.string().nullable(),
+          /** đồng bộ chip với om-panel: số topic .md (trừ INDEX.md) + marker active */
+          topicFiles: z.number(),
+          active: z.boolean(),
+        }),
+      )
+      .default([]),
     resolved: z
       .object({
         agentId: z.string().nullable(),
