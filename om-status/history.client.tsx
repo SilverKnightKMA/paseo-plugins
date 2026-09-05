@@ -21,11 +21,11 @@ export function OmHistoryCard(props: PluginTimelineItemProps<{ compaction: { sta
   const refresh = useCallback(async () => {
     if (!workspaceId) return;
     try {
-      setData(await read({ workspaceId }));
+      setData(await read({ workspaceId, agentId: props.agentId }));
     } catch {
       // keep last snapshot
     }
-  }, [workspaceId, read]);
+  }, [workspaceId, props.agentId, read]);
 
   useEffect(() => {
     void refresh();

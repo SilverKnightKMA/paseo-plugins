@@ -71,12 +71,12 @@ export function OmPill(props: PluginComposerPillProps) {
 
   const refresh = useCallback(async () => {
     try {
-      const next = await read({ workspaceId: props.workspaceId });
+      const next = await read({ workspaceId: props.workspaceId, agentId: props.agentId });
       if (mounted.current) setData(next);
     } catch {
       // keep the last snapshot; next poll retries
     }
-  }, [props.workspaceId, read]);
+  }, [props.workspaceId, props.agentId, read]);
 
   useEffect(() => {
     mounted.current = true;

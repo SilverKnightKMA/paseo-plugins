@@ -37,11 +37,28 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
             OM chưa chạy trong workspace này
           </Text>
           <Text style={{ fontSize: 12, color: props.theme.colors.foregroundMuted, marginTop: 4 }}>
-            /om on trong session để bật observational-memory — panel này sẽ tự cập nhật.
+            {data.note ?? "/om on trong session để bật observational-memory — panel này sẽ tự cập nhật."}
           </Text>
         </View>
       ) : (
         <>
+          <View
+            style={{
+              backgroundColor: props.theme.colors.surface1,
+              borderRadius: 6,
+              padding: 10,
+              flexDirection: "row",
+              justifyContent: "space-between",
+            }}
+          >
+            <Text style={{ fontSize: 11, color: props.theme.colors.foregroundMuted }}>
+              session {(data.sessionId ?? "?").slice(0, 8)}
+              {data.resolved?.via === "workspace-active" ? " · agent active" : ""}
+            </Text>
+            <Text style={{ fontSize: 11, color: props.theme.colors.foregroundMuted }}>
+              {data.sessions.length > 1 ? `${data.sessions.length} sessions có file` : ""}
+            </Text>
+          </View>
           <View
             style={{
               backgroundColor: props.theme.colors.surface1,
