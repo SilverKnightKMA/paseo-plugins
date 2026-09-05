@@ -68,5 +68,16 @@ export default function contribute(plugin: PluginContext) {
     Component: OmStatusPanel,
   });
 
+  plugin.addCommandCenterItem({
+    id: "om-status-open",
+    title: "OM Status: live /om status",
+    icon: "Brain",
+    keywords: ["om", "memory", "status", "observer"],
+    context: "workspace",
+    onSelect(context_: { openPanel: (id: string) => void }) {
+      context_.openPanel("om-status");
+    },
+  });
+
   return () => {};
 }
