@@ -3,16 +3,21 @@
 // cache preserves titles for sessions whose agent process is gone, so chips
 // keep showing names instead of raw UUIDs.
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 export type TitleCache = Record<string, { title: string; agentId?: string | null; ts: number }>;
 
-const CACHE_FILE = path.join(os.homedir(), ".paseo", "plugin-data", "session-titles.json");
+// Lazy: node:os default import breaks the Metro client bundle (no homedir shim)
+// and this module is evaluated on the client even though the cache is only
+// touched by server-side RPC handlers.
+function cacheFile(): string {
+	const home = process.env.PI_HOME ?? process.env.HOME ?? "/home/coder";
+	return path.join(home, ".paseo", "plugin-data", "session-titles.json");
+}
 
 export function readTitleCache(): TitleCache {
   try {
-    const raw = JSON.parse(fs.readFileSync(CACHE_FILE, "utf8")) as TitleCache;
+    const raw = JSON.parse(fs.readFileSync(cacheFile(), "utf8")) as TitleCache;
     return raw && typeof raw === "object" ? raw : {};
   } catch {
     return {};
@@ -21,10 +26,10 @@ export function readTitleCache(): TitleCache {
 
 export function writeTitleCache(cache: TitleCache): void {
   try {
-    fs.mkdirSync(path.dirname(CACHE_FILE), { recursive: true });
-    const tmp = `${CACHE_FILE}.tmp-${process.pid}`;
+    fs.mkdirSync(path.dirname(cacheFile()), { recursive: true });
+    const tmp = `${cacheFile()}.tmp-${process.pid}`;
     fs.writeFileSync(tmp, JSON.stringify(cache), "utf8");
-    fs.renameSync(tmp, CACHE_FILE);
+    fs.renameSync(tmp, cacheFile());
   } catch {
     // best-effort; cache is an enhancement, never a dependency
   }
