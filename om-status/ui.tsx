@@ -3,8 +3,8 @@
 // plugin một (git source:plugin/path) — không import chéo được lúc runtime.
 // Repo-level check-shared-ui.py + bước CI ép 2 bản phải giống hệt nhau:
 // sửa ở đây thì copy sang bản kia trong CÙNG commit, nếu không CI đỏ.
-import React from "react";
-import { Text, View, Pressable } from "react-native";
+import React, { useState } from "react";
+import { Text, View, Pressable, TextInput } from "react-native";
 import type { ReactNode } from "react";
 
 /** Màu theme mà kit này cần — structural, không kéo types của SDK vào. */
@@ -126,5 +126,73 @@ export function OmSection(props: { c: OmColors; children: ReactNode }) {
     <Text style={{ color: props.c.foreground, fontSize: 12, fontWeight: "600" as const, marginTop: 8, marginBottom: 4 }}>
       {props.children}
     </Text>
+  );
+}
+
+const OM_PICKER_SHOW = 4; // số chip hiển thị — flood control, phần còn lại sau search
+
+/** Nhãn chip dùng chung: '● tên · Nt' / 'tên · Nt'. */
+export function omChipLabel(active: boolean, title: string | null, sessionId: string, topicFiles: number): string {
+  return `${active ? "● " : ""}${title ? title.slice(0, 24) : sessionId.slice(0, 8)} · ${topicFiles}t`;
+}
+
+/** Khối chọn session dùng chung: chips + search + flood control.
+ *  Tự quản state search/expand; sessions < 2 thì không render gì. */
+export function OmSessionPicker(props: {
+  c: OmColors;
+  sessions: { sessionId: string; label: string; active: boolean }[];
+  selectedId: string | null | undefined;
+  onPick: (sessionId: string | null) => void;
+}) {
+  const { c, sessions, selectedId, onPick } = props;
+  const [expanded, setExpanded] = useState(false);
+  const [search, setSearch] = useState("");
+  if (sessions.length < 2) return null;
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? sessions.filter((s) => s.sessionId.toLowerCase().includes(q) || s.label.toLowerCase().includes(q))
+    : sessions;
+  const chips = q || expanded ? filtered : filtered.slice(0, OM_PICKER_SHOW);
+  const hidden = q || expanded ? 0 : filtered.length - chips.length;
+  const moreStyle = { backgroundColor: c.surface1, borderColor: c.border, borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 };
+  return (
+    <View style={{ marginBottom: 8, gap: 6 }}>
+      <OmChipRow>
+        {chips.map((s) => (
+          <OmChip
+            key={s.sessionId}
+            c={c}
+            active={s.sessionId === selectedId}
+            onPress={() => onPick(s.sessionId === selectedId ? null : s.sessionId)}
+            label={s.label}
+          />
+        ))}
+        {hidden > 0 ? (
+          <Pressable onPress={() => setExpanded(true)} style={moreStyle}>
+            <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>+{hidden} nữa…</Text>
+          </Pressable>
+        ) : expanded ? (
+          <Pressable onPress={() => setExpanded(false)} style={moreStyle}>
+            <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>thu gọn</Text>
+          </Pressable>
+        ) : null}
+      </OmChipRow>
+      <TextInput
+        value={search}
+        onChangeText={setSearch}
+        placeholder="tìm session theo tên / id…"
+        placeholderTextColor={c.foregroundMuted}
+        style={{
+          backgroundColor: c.surface1,
+          borderColor: c.border,
+          borderWidth: 1,
+          borderRadius: OM_RADIUS_INPUT,
+          paddingHorizontal: 8,
+          paddingVertical: 4,
+          color: c.foreground,
+          fontSize: 12,
+        }}
+      />
+    </View>
   );
 }

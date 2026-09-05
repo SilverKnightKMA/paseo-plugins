@@ -3,7 +3,7 @@ import { Text, View, ScrollView } from "react-native";
 import { useRpc } from "@getpaseo/plugin";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin";
 import { GetOmStateRpc, type OmPanelState } from "./rpc.js";
-import { OmCard, OmChip, OmChipRow, OmHeader, OmSection, omTimeAgo, omViaSuffix } from "./ui.js";
+import { OmCard, OmHeader, OmSection, OmSessionPicker, omChipLabel, omTimeAgo, omViaSuffix } from "./ui.js";
 
 const POLL_MS = 30_000;
 
@@ -51,22 +51,16 @@ export function OmPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
         ]}
       />
 
-      {data && data.sessions.length > 1 ? (
-        <OmChipRow style={{ marginBottom: 10 }}>
-          {data.sessions.map((s) => {
-            const isSel = s.sessionId === (resolved?.sessionId ?? "");
-            return (
-              <OmChip
-                key={s.sessionId}
-                c={c}
-                active={isSel}
-                onPress={() => setPicked(isSel ? null : s.sessionId)}
-                label={`${s.active ? "● " : ""}${s.title ? s.title.slice(0, 24) : s.sessionId.slice(0, 8)} · ${s.topicFiles}t`}
-              />
-            );
-          })}
-        </OmChipRow>
-      ) : null}
+      <OmSessionPicker
+        c={c}
+        sessions={data?.sessions.map((s) => ({
+          sessionId: s.sessionId,
+          label: omChipLabel(s.active, s.title, s.sessionId, s.topicFiles),
+          active: s.active,
+        })) ?? []}
+        selectedId={resolved?.sessionId}
+        onPick={(id) => setPicked(id)}
+      />
 
       {error ? <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>rpc error: {error}</Text> : null}
 
