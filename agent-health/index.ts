@@ -157,8 +157,8 @@ export default function contribute(plugin: PluginContext) {
       alert,
       ts: last.ts,
       code: last.code,
-      idleMs: last.idleMs,
-      agentId: last.agentId,
+      idleMs: last.idleMs ?? null,
+      agentId: last.agentId ?? null,
       mine: Boolean(input.agentId && last.agentId === input.agentId),
     };
   });
