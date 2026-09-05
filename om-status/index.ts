@@ -39,11 +39,21 @@ type AgentLike = {
   runtimeInfo?: { sessionId?: string | null } | null;
 };
 
+/** Wire entries are wrappers: { agent: <snapshot> }. Unwrap defensively. */
+function unwrapAgents(entries: unknown[]): AgentLike[] {
+  const out: AgentLike[] = [];
+  for (const e of entries) {
+    const inner = (e as { agent?: unknown }).agent;
+    if (inner && typeof inner === "object") out.push(inner as AgentLike);
+  }
+  return out;
+}
+
 /** agentId → sessionId via the daemon's agent snapshot (runtimeInfo). */
 async function sessionIdForAgent(paseo: { agents: { list: () => Promise<{ entries: unknown[] }> } }, agentId: string): Promise<{ sessionId: string | null; status: string | null }> {
   try {
     const res = await paseo.agents.list();
-    const agent = (res.entries as AgentLike[]).find((a) => a.id === agentId);
+    const agent = unwrapAgents(res.entries).find((a) => a.id === agentId);
     return { sessionId: agent?.runtimeInfo?.sessionId ?? null, status: agent?.status ?? null };
   } catch {
     return { sessionId: null, status: null };
@@ -55,7 +65,7 @@ async function sessionIdForAgent(paseo: { agents: { list: () => Promise<{ entrie
 async function activeAgentOfWorkspace(paseo: { agents: { list: () => Promise<{ entries: unknown[] }> } }, workspaceId: string): Promise<AgentLike | null> {
   try {
     const res = await paseo.agents.list();
-    const inWs = (res.entries as AgentLike[]).filter((a) => a.workspaceId === workspaceId);
+    const inWs = unwrapAgents(res.entries).filter((a) => a.workspaceId === workspaceId);
     const running = inWs.find((a) => a.status === "running");
     if (running) return running;
     return inWs.sort((a, b) => Date.parse(b.updatedAt ?? "") - Date.parse(a.updatedAt ?? ""))[0] ?? null;

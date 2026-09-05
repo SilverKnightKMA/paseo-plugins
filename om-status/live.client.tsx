@@ -18,10 +18,13 @@ export function startOmLive(client: PluginClientContext): () => void {
     try {
       const res = await client.paseo.agents.list();
       const seen = new Set<string>();
-      for (const agent of res.entries) {
-        const workspaceId = (agent as { workspaceId?: string | null }).workspaceId;
-        const agentId = (agent as { id?: string }).id;
-        if (!workspaceId || !agentId) continue;
+      // wire entries are { agent: <snapshot> } wrappers — unwrap
+      const agents = res.entries
+        .map((e) => (e as { agent?: { id?: string; workspaceId?: string | null } }).agent)
+        .filter((a): a is { id: string; workspaceId: string } => Boolean(a?.id && a?.workspaceId));
+      for (const agent of agents) {
+        const workspaceId = agent.workspaceId;
+        const agentId = agent.id;
         const key = `${workspaceId}/${agentId}`;
         seen.add(key);
         if (registered.has(key)) continue;
