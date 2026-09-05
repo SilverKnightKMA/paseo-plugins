@@ -2,8 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { PluginContext } from "@getpaseo/plugin";
+import { z } from "zod";
 import { GetStateRpc, ZwEventSchema, AgentRowSchema, StuckQueueSchema } from "./rpc.js";
 import { HealthPanel } from "./panel.client.js";
+import { SubagentNoticeCard, type SubagentNoticeData } from "./subagent-notice.client.js";
 
 interface RawZwEvent {
   ts?: unknown;
@@ -154,5 +156,61 @@ export default function contribute(plugin: PluginContext) {
     },
   });
 
+  // ── subagent notice cards ─────────────────────────────────────────────
+  // The subagent channel delivers <subagent-message …> blocks as plain
+  // user-message text; the app prints the raw tags + duplicated UUIDs.
+  // Transform (render-layer only) replaces them with a clean plugin card.
+  plugin.addTimelineTransformer({
+    id: "subagent-report-transformer",
+    query: { itemType: "user_message" },
+    transform: ({ item }) => {
+      if (item.type !== "user_message") return undefined;
+      const parsed = parseSubagentNotice(item.text);
+      if (!parsed) return undefined;
+      return { items: [{ type: "plugin" as const, kind: "subagent-report", version: 1, data: parsed }] };
+    },
+  });
+
+  plugin.addTimelineRenderer({
+    kind: "subagent-report",
+    version: 1,
+    schema: z.object({
+      role: z.string(),
+      kind: z.string(),
+      agentId: z.string(),
+      name: z.string().nullable(),
+      body: z.string(),
+      tone: z.enum(["ok", "info", "warn"]),
+    }),
+    Component: SubagentNoticeCard,
+  });
+
   return () => {};
+}
+
+const SUBAGENT_RE =
+  /^<subagent-message from="([0-9a-f-]{36})" role="([\w-]+)" kind="([\w-]+)">\n?([\s\S]*?)\n?<\/subagent-message>$/;
+
+/** Parse + clean a <subagent-message> block into card data; null = not ours. */
+function parseSubagentNotice(text: string): SubagentNoticeData | null {
+  const m = SUBAGENT_RE.exec(text.trim());
+  if (!m) return null;
+  const [, agentId, role, kindTag, rawBody] = m;
+  let body = rawBody.trim();
+  let tone: SubagentNoticeData["tone"] = "info";
+  let label = kindTag;
+  const tag = /^\[([a-z][a-z-]*)\]\s*/i.exec(body);
+  if (tag) {
+    label = tag[1].toLowerCase();
+    body = body.slice(tag[0].length);
+    if (label === "auto-report") tone = "ok";
+    else if (label === "channel-nack") tone = "warn";
+  }
+  let name: string | null = null;
+  const nm = /Subagent [\w-]+ "([^"]+)" \(([0-9a-f-]{36})\)/.exec(body);
+  if (nm) {
+    name = nm[1];
+    body = body.replace(` "${nm[1]}" (${nm[2]})`, ` "${nm[1]}"`); // bỏ UUID lặp trong thân
+  }
+  return { role, kind: label, agentId, name, body, tone };
 }

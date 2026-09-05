@@ -61,13 +61,19 @@ export function startOmLive(client: PluginClientContext): () => void {
 
 const POLL_MS = 2000;
 
-const ICON: Record<string, string> = { working: "⏳", warning: "⚠️", healthy: "✓" };
+/** Verdict glyph + color — theme-driven, không dùng emoji (render pink clashing). */
+function verdictMark(verdict: string, c: { statusSuccess: string; statusWarning: string; foregroundMuted: string }): { glyph: string; color: string } {
+  if (verdict === "healthy") return { glyph: "✓", color: c.statusSuccess };
+  if (verdict === "warning") return { glyph: "!", color: c.statusWarning };
+  return { glyph: "…", color: c.foregroundMuted };
+}
 
 /** The live gauge itself — same data contract as the panel, compressed. */
 export function OmPill(props: PluginComposerPillProps) {
   const read = useRpc(GetOmStatusRpc);
   const [data, setData] = useState<OmStatusState | null>(null);
   const mounted = useRef(true);
+  const c = props.theme.colors;
 
   const refresh = useCallback(async () => {
     try {
@@ -90,26 +96,48 @@ export function OmPill(props: PluginComposerPillProps) {
 
   if (!data?.present || !data.summary) {
     return (
-      <Text style={{ opacity: 0.5 }}>
-        om · {data?.present ? "…" : "off"}
-      </Text>
+      <View
+        style={{
+          backgroundColor: c.surface1,
+          borderColor: c.border,
+          borderWidth: 1,
+          borderRadius: 999,
+          paddingHorizontal: 10,
+          paddingVertical: 3,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
+        <Text style={{ color: c.foregroundMuted, fontFamily: "monospace", fontWeight: "700" as const, fontSize: 11 }}>om</Text>
+        <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>{data?.present ? "…" : "off"}</Text>
+      </View>
     );
   }
   const s = data.summary;
   const ctx = s.contextTokens != null ? `ctx ${Math.round((s.contextTokens / s.contextMax) * 100)}%` : "ctx ?";
   const workers =
-    s.verdict === "working"
-      ? s.observersRunning > 0
-        ? `om ${s.observersRunning}/${s.observerSlots}`
-        : "om c"
-      : "om ✓";
+    s.verdict === "working" ? (s.observersRunning > 0 ? `${s.observersRunning}/${s.observerSlots}` : "c") : "✓";
+  const mark = verdictMark(s.verdict, c);
   return (
-    <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
-      <Text>{ICON[s.verdict] ?? "•"}</Text>
-      <Text>
-        {workers} · {ctx}
-      </Text>
-      <Text style={{ opacity: 0.6 }}>
+    <View
+      style={{
+        backgroundColor: c.surface2,
+        borderColor: c.border,
+        borderWidth: 1,
+        borderRadius: 999,
+        paddingHorizontal: 10,
+        paddingVertical: 3,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+      }}
+    >
+      <Text style={{ color: c.accent, fontFamily: "monospace", fontWeight: "700" as const, fontSize: 11 }}>om</Text>
+      <Text style={{ color: mark.color, fontSize: 12, fontWeight: "700" as const }}>{mark.glyph}</Text>
+      <Text style={{ color: c.foreground, fontSize: 12 }}>{workers}</Text>
+      <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>{ctx}</Text>
+      <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>
         ${s.sessionCostUsd.toFixed(2)} · {s.sessionRuns}r
       </Text>
     </View>
