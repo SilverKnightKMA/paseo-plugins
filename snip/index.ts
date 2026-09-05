@@ -148,7 +148,10 @@ async function readSnipState(
       if (sessionId && agent?.id) resolved = { agentId: agent.id, agentTitle: agent?.title ?? null, sessionId, via: "workspace-active" };
     }
 
-    // 2) side list: union of live agents + sessions the engine already touched
+    // 2) side list: sessions the ENGINE touched (control files) — main chats
+    // only: the engine skips subagent sessions (parentSession set), so this
+    // never floods with spawned scouts/workers. Live agents still feed the
+    // title map; they just don't add picker entries.
     const titleCache = mergeLiveTitles(titleBySession);
     const engineSessions = new Set<string>();
     try {
@@ -156,7 +159,6 @@ async function readSnipState(
     } catch {
       // no control dir yet — engine v1.5 never ran
     }
-    for (const sid of titleBySession.keys()) engineSessions.add(sid);
     const sessions = [] as SnipState["sessions"];
     for (const sessionId of engineSessions) {
       sessions.push({
