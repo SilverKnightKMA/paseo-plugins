@@ -28,10 +28,10 @@ export function omTimeAgo(iso: string | null): string {
   const then = Date.parse(iso);
   if (!Number.isFinite(then)) return iso;
   const s = Math.max(0, Math.floor((Date.now() - then) / 1000));
-  if (s < 90) return `${s}s ago`;
-  if (s < 5400) return `${Math.floor(s / 60)}m ago`;
-  if (s < 129600) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
+  if (s < 90) return `${s}s trước`;
+  if (s < 5400) return `${Math.floor(s / 60)}m trước`;
+  if (s < 129600) return `${Math.floor(s / 3600)}h trước`;
+  return `${Math.floor(s / 86400)}d trước`;
 }
 
 /** Cách session đang hiển thị được resolve —thống nhất nhãn 2 panel. */

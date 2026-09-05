@@ -57,12 +57,12 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
           <OmHeader
             c={c}
             rail={stale ? c.statusWarning : c.accent}
-            title={`${data.resolved?.agentTitle ? `${data.resolved.agentTitle.slice(0, 30)} · ` : ""}session ${(data.resolved?.sessionId ?? "?").slice(0, 8)}${omViaSuffix(data.resolved?.via)}`}
-            dim={
-              data.sessions.length > 1
-                ? [`${data.sessions.length} sessions · live · cập nhật ${data.ageSec ?? "?"}s trước · poll ${POLL_MS / 1000}s`]
-                : [`live · cập nhật ${data.ageSec ?? "?"}s trước · poll ${POLL_MS / 1000}s`]
-            }
+            title={`${data.workspace ?? props.workspaceId} · session ${(data.resolved?.sessionId ?? "?").slice(0, 8)}${omViaSuffix(data.resolved?.via)}`}
+            dim={[
+              ...(data.resolved?.agentTitle ? [`agent: ${data.resolved.agentTitle}`] : []),
+              ...(data.sessions.length > 1 ? [`${data.sessions.length} sessions`] : []),
+              `live · cập nhật ${data.ageSec ?? "?"}s trước · poll ${POLL_MS / 1000}s`,
+            ]}
           />
           {sessions.length > 1 ? (
             <View style={{ marginBottom: 8, gap: 6 }}>
