@@ -36,6 +36,9 @@ type AgentLike = {
   workspaceId?: string | null;
   status?: string | null;
   updatedAt?: string | null;
+  /** gần "focus" nhất phía server: agent nhận user message gần nhất */
+  lastUserMessageAt?: string | null;
+  title?: string | null;
   runtimeInfo?: { sessionId?: string | null } | null;
 };
 
@@ -49,41 +52,8 @@ function unwrapAgents(entries: unknown[]): AgentLike[] {
   return out;
 }
 
-/** agentId → sessionId via the daemon's agent snapshot (runtimeInfo). */
-async function sessionIdForAgent(paseo: { agents: { list: () => Promise<{ entries: unknown[] }> } }, agentId: string): Promise<{ sessionId: string | null; status: string | null }> {
-  try {
-    const res = await paseo.agents.list();
-    const agent = unwrapAgents(res.entries).find((a) => a.id === agentId);
-    return { sessionId: agent?.runtimeInfo?.sessionId ?? null, status: agent?.status ?? null };
-  } catch {
-    return { sessionId: null, status: null };
-  }
-}
-
-/** No agentId (workspace panel): the ACTIVE agent of the workspace —
- *  status "running" wins, else the most recently updated. */
-async function activeAgentOfWorkspace(paseo: { agents: { list: () => Promise<{ entries: unknown[] }> } }, workspaceId: string): Promise<AgentLike | null> {
-  try {
-    const res = await paseo.agents.list();
-    const inWs = unwrapAgents(res.entries).filter((a) => a.workspaceId === workspaceId);
-    const running = inWs.find((a) => a.status === "running");
-    if (running) return running;
-    return inWs.sort((a, b) => Date.parse(b.updatedAt ?? "") - Date.parse(a.updatedAt ?? ""))[0] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/** Read the workspace OM status snapshot written by the observational-memory
- *  extension (v2 display channel). Never throws — a missing/stale file is a
- *  valid state ("OM off / not installed / no event yet"), returned as such.
- *
- *  v1.2.4+: the file is session-scoped (.memory/<sessionId>/om-status.json);
- *  several chats in one workspace each keep their own. We resolve the NEWEST
- *  file (the most recently active OM session) and fall back to the legacy
- *  workspace-level path during the transition. */
 async function readOmStatus(
-  input: { workspaceId: string; agentId?: string | null },
+  input: { workspaceId: string; agentId?: string | null; sessionId?: string | null },
   context: Parameters<Parameters<PluginContext["handle"]>[1]>[1],
 ): Promise<OmStatusState> {
   const empty = emptyState();
@@ -94,15 +64,44 @@ async function readOmStatus(
     const directory = ws?.workspaceDirectory ?? null;
     if (!directory) return { ...empty, note: "workspace directory chưa xác định được" };
 
-    // 1) resolve the target session — deterministic, agent-driven
+    // danh sách agent 1 lần — dùng cho resolution + map sessionId → title
+    let agents: AgentLike[] = [];
+    try {
+      agents = unwrapAgents((await context.paseo.agents.list()).entries);
+    } catch {
+      agents = [];
+    }
+    const titleBySession = new Map<string, string>();
+    for (const a of agents) {
+      const sid = a.runtimeInfo?.sessionId;
+      if (sid && a.title) titleBySession.set(sid, a.title);
+    }
+
+    // 1) resolution: explicit (chips picker) > agentId > workspace-active
     let resolved: OmStatusState["resolved"] = undefined;
-    if (input.agentId) {
-      const { sessionId, status } = await sessionIdForAgent(context.paseo, input.agentId);
-      if (sessionId) resolved = { agentId: input.agentId, sessionId, status, via: "agent" };
-    } else {
-      const agent = await activeAgentOfWorkspace(context.paseo, input.workspaceId);
+    if (input.sessionId) {
+      const agent = agents.find((a) => a.runtimeInfo?.sessionId === input.sessionId);
+      resolved = {
+        agentId: agent?.id ?? null,
+        agentTitle: agent?.title ?? null,
+        sessionId: input.sessionId,
+        status: agent?.status ?? null,
+        via: "explicit",
+      };
+    } else if (input.agentId) {
+      const agent = agents.find((a) => a.id === input.agentId);
       const sessionId = agent?.runtimeInfo?.sessionId ?? null;
-      if (sessionId && agent?.id) resolved = { agentId: agent.id, sessionId, status: agent.status ?? null, via: "workspace-active" };
+      if (sessionId)
+        resolved = { agentId: input.agentId, agentTitle: agent?.title ?? null, sessionId, status: agent?.status ?? null, via: "agent" };
+    } else {
+      const inWs = agents.filter((a) => a.workspaceId === input.workspaceId);
+      const running = inWs.filter((a) => a.status === "running");
+      const pool = running.length > 0 ? running : inWs;
+      const ts = (a: AgentLike) => Math.max(Date.parse(a.lastUserMessageAt ?? "") || 0, Date.parse(a.updatedAt ?? "") || 0);
+      const agent = pool.sort((a, b) => ts(b) - ts(a))[0];
+      const sessionId = agent?.runtimeInfo?.sessionId ?? null;
+      if (sessionId && agent?.id)
+        resolved = { agentId: agent.id, agentTitle: agent?.title ?? null, sessionId, status: agent.status ?? null, via: "workspace-active" };
     }
     if (!resolved) {
       return {
@@ -115,11 +114,11 @@ async function readOmStatus(
     // 2) enumerate per-session files for the side list (display only)
     const memoryDir = path.join(directory, ".memory");
     const sessionDirs = (await readdir(memoryDir, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name);
-    const sessions: { sessionId: string; ageSec: number }[] = [];
+    const sessions: { sessionId: string; ageSec: number; title: string | null }[] = [];
     for (const sessionId of sessionDirs) {
       try {
         const mtime = (await stat(path.join(memoryDir, sessionId, "om-status.json"))).mtimeMs;
-        sessions.push({ sessionId, ageSec: Math.round((Date.now() - mtime) / 1000) });
+        sessions.push({ sessionId, ageSec: Math.round((Date.now() - mtime) / 1000), title: titleBySession.get(sessionId) ?? null });
       } catch {
         // no status file for this session — not listed
       }

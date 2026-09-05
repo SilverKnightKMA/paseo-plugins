@@ -32,6 +32,8 @@ export const GetOmStatusRpc = {
   input: z.object({
     workspaceId: z.string(),
     agentId: z.string().nullish(),
+    /** explicit override từ chips picker — thắng mọi resolution */
+    sessionId: z.string().nullish(),
   }),
   output: z.object({
     present: z.boolean(),
@@ -43,13 +45,14 @@ export const GetOmStatusRpc = {
     summary: OmSummarySchema.nullable(),
     events: z.array(OmEventSchema),
     ageSec: z.number().nullable(),
-    sessions: z.array(z.object({ sessionId: z.string(), ageSec: z.number() })).default([]),
+    sessions: z.array(z.object({ sessionId: z.string(), ageSec: z.number(), title: z.string().nullable() })).default([]),
     resolved: z
       .object({
         agentId: z.string().nullable(),
+        agentTitle: z.string().nullable(),
         sessionId: z.string(),
         status: z.string().nullable(),
-        via: z.enum(["agent", "workspace-active"]),
+        via: z.enum(["agent", "workspace-active", "explicit"]),
       })
       .nullish(),
     note: z.string().nullish(),
