@@ -24,6 +24,7 @@ const EMPTY: SnipState = {
 
 const ControlFileSchema = z.object({
   v: z.literal(1),
+  cwd: z.string().nullish(),
   active: z.array(z.string()),
   sticky: z.boolean(),
   sentAt: z.string().nullish(),
@@ -41,6 +42,7 @@ type AgentLike = {
   title?: string | null;
   archivedAt?: string | null;
   labels?: Record<string, string> | null;
+  cwd?: string | null;
   runtimeInfo?: { sessionId?: string | null } | null;
 };
 
@@ -145,6 +147,22 @@ async function readSnipState(
       if (sid && a.title) titleBySession.set(sid, a.title);
     }
 
+    // Workspace scoping (user request 2026-09-05: switching workspaces must
+    // hide unrelated sessions). Prefer the daemon workspace id; fall back to
+    // matching the agent cwd against the workspace root (projectRootPath).
+    let rootDir: string | null = null;
+    try {
+      const ws = await context.paseo.workspaces.list();
+      const hit = ws.entries.find((w) => w.id === input.workspaceId);
+      rootDir = hit?.projectRootPath ?? null;
+    } catch {
+      // workspaces unavailable — cwd fallback disabled
+    }
+    const inWsAgent = (a: AgentLike): boolean => {
+      if (a.workspaceId) return a.workspaceId === input.workspaceId;
+      return rootDir != null && a.cwd != null && a.cwd === rootDir;
+    };
+
     // 1) resolution: explicit (chips picker) > agentId (pill) > workspace-active
     let resolved: SnipState["resolved"] = undefined;
     if (input.sessionId) {
@@ -157,7 +175,7 @@ async function readSnipState(
     } else {
       // main chats only — subagents share the workspace and often run, but the
       // picker (and thus auto-resolution) must land on a main chat session
-      const mains = agents.filter((a) => a.workspaceId === input.workspaceId && isMainChat(a));
+      const mains = agents.filter((a) => inWsAgent(a) && isMainChat(a));
       const running = mains.filter((a) => a.status === "running");
       const pool = running.length > 0 ? running : mains;
       const ts = (a: AgentLike) => Math.max(Date.parse(a.lastUserMessageAt ?? "") || 0, Date.parse(a.updatedAt ?? "") || 0);
@@ -166,22 +184,29 @@ async function readSnipState(
       if (sessionId && agent?.id) resolved = { agentId: agent.id, agentTitle: agent?.title ?? null, sessionId, via: "workspace-active" };
     }
 
-    // 2) side list — broader than OM: every MAIN session of this workspace
+    // 2) side list — broader than OM: every MAIN session of THIS workspace
     // (OM only lists sessions registered under .memory). Sources: live main
-    // agents of this workspace + control files (survive daemon restarts; the
-    // engine itself never writes files for subagent sessions). Subagent agents
-    // are identified by daemon labels (subagent.role / subagent.parent /
-    // paseo.parent-agent-id); archived chats are dropped as dead weight.
+    // agents of this workspace + control files whose cwd (written by the
+    // engine since v1.4.9) belongs to this workspace root. Subagent agents are
+    // identified by daemon labels; archived chats and foreign-workspace
+    // control files are excluded when switching panels.
     const titleCache = mergeLiveTitles(titleBySession);
     const engineSessions = new Set<string>();
     try {
-      for (const f of await readdir(controlDir())) if (f.endsWith(".json")) engineSessions.add(f.replace(/\.json$/, ""));
+      for (const f of await readdir(controlDir())) {
+        if (!f.endsWith(".json")) continue;
+        const sid = f.replace(/\.json$/, "");
+        const cf = await readControlFile(sid);
+        // cwd unknown (pre-v1.4.9 file) → only keep if it is the resolved session
+        if (cf?.cwd && rootDir ? cf.cwd === rootDir || cf.cwd.startsWith(`${rootDir}/`) : sid === resolved?.sessionId) {
+          engineSessions.add(sid);
+        }
+      }
     } catch {
       // no control dir yet — engine v1.5 never ran
     }
     for (const a of agents) {
-      if (a.workspaceId && a.workspaceId !== input.workspaceId) continue;
-      if (!isMainChat(a)) continue;
+      if (!inWsAgent(a) || !isMainChat(a)) continue;
       const sid = a.runtimeInfo?.sessionId;
       if (sid) engineSessions.add(sid);
     }
