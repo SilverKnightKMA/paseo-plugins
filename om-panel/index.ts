@@ -146,6 +146,15 @@ export default function contribute(plugin: PluginContext) {
           sessionId = briefs[0]?.sessionId ?? null;
           via = "newest";
         }
+      } else {
+        // explicit (đang chọn): tra lại agent của session để giữ dòng "agent: X"
+        // — session đã chết (không còn agent) thì title vẫn có từ cache chip.
+        try {
+          const res = await context.paseo.agents.list();
+          agent = unwrapAgents(res.entries).find((a) => a.runtimeInfo?.sessionId === sessionId) ?? null;
+        } catch {
+          agent = null;
+        }
       }
 
       const resolved = sessionId ? { sessionId, agentId: agent?.id ?? null, agentTitle: agent?.title ?? null, via } : undefined;
