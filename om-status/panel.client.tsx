@@ -49,7 +49,15 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
             title={`${data.workspace ?? props.workspaceId} · session ${(data.resolved?.sessionId ?? "?").slice(0, 8)}${omViaSuffix(data.resolved?.via)}`}
             dim={[
               ...(data.resolved?.agentTitle ? [`agent: ${data.resolved.agentTitle}`] : []),
-              ...(data.sessions.length > 1 ? [`${data.sessions.length} sessions`] : []),
+              ...(data.summary
+                ? [
+                    `${data.summary.verdict} · obs ${data.summary.observersRunning}/${data.summary.observerSlots} · ctx ${
+                      data.summary.contextTokens != null
+                        ? Math.round((data.summary.contextTokens / data.summary.contextMax) * 100)
+                        : "?"
+                    }% · $${data.summary.sessionCostUsd.toFixed(2)} · ${data.summary.sessionRuns}r`,
+                  ]
+                : []),
               `live · cập nhật ${data.ageSec ?? "?"}s trước · poll ${POLL_MS / 1000}s`,
             ]}
           />
