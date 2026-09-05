@@ -45,10 +45,10 @@ export function OmPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
         title={`${data?.workspace ?? workspaceId} · session ${(resolved?.sessionId ?? "?").slice(0, 8)}${omViaSuffix(resolved?.via)}`}
         dim={[
           ...(resolved?.agentTitle ? [`agent: ${resolved.agentTitle}`] : []),
-          ...(sel
-            ? [`${sel.topicFiles} topics · ${sel.totalKb} KB · cập nhật ${omTimeAgo(sel.lastModified)}`]
-            : [data?.note ?? "…"]),
-          ...(data ? [`live · poll ${POLL_MS / 1000}s`] : []),
+          ...(sel ? [`${sel.topicFiles} topics · ${sel.totalKb} KB`] : [data?.note ?? "…"]),
+          ...(data
+            ? [`live · cập nhật ${sel ? omTimeAgo(sel.lastModified) : "?"} · poll ${POLL_MS / 1000}s`]
+            : []),
         ]}
       />
 
