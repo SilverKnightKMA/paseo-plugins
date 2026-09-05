@@ -102,9 +102,9 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
                 </View>
               );
             })}
-            <Text style={{ fontSize: 11, color: c.foregroundMuted, marginTop: 6 }}>
-              {stale ? "⚠ không có event mới" : "live"}
-            </Text>
+            {stale ? (
+              <Text style={{ fontSize: 11, color: c.statusWarning, marginTop: 6 }}>⚠ không có event mới {data.ageSec ?? "?"}s rồi</Text>
+            ) : null}
           </OmCard>
 
           <Text style={{ fontSize: 12, fontWeight: "600" as const, color: c.foreground }}>
