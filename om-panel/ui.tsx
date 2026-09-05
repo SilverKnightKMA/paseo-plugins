@@ -91,7 +91,7 @@ export function OmHeader(props: { c: OmColors; title: string; dim?: string[]; ra
 
 /** Hàng chip session — pill 999, mặc định surface1, đang chọn surface2+accent. */
 export function OmChipRow(props: { children: ReactNode; style?: object }) {
-  return <View style={{ flexDirection: "row" as const, flexWrap: "wrap" as const, gap: 6, ...props.style }} />;
+  return <View style={{ flexDirection: "row" as const, flexWrap: "wrap" as const, gap: 6, ...props.style }}>{props.children}</View>;
 }
 
 export function OmChip(props: {
