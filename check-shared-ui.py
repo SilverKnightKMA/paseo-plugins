@@ -12,8 +12,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-FILES = [ROOT / "om-status" / "ui.tsx", ROOT / "om-panel" / "ui.tsx", ROOT / "snip" / "ui.tsx"]
-TITLE_FILES = [ROOT / "om-status" / "titles.ts", ROOT / "om-panel" / "titles.ts", ROOT / "snip" / "titles.ts"]
+FILES = [ROOT / "om-status" / "ui.tsx", ROOT / "om-panel" / "ui.tsx", ROOT / "snip" / "ui.tsx", ROOT / "task" / "ui.tsx"]
+TITLE_FILES = [ROOT / "om-status" / "titles.ts", ROOT / "om-panel" / "titles.ts", ROOT / "snip" / "titles.ts", ROOT / "task" / "titles.ts"]
 
 
 def digest(p: Path) -> str:
