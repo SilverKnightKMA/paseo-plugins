@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { Text, View, ScrollView } from "react-native";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin";
 import { useRpc } from "@getpaseo/plugin";
 import { GetOmStatusRpc } from "./rpc.js";
-import { OmCard, OmHeader, OmSessionPicker, omChipLabel, omViaSuffix } from "./ui.js";
+import { OmCard, OmHeader, OmSection, OmSessionPicker, omChipLabel, omViaSuffix } from "./ui.js";
 
 const POLL_MS = 2000;
 
@@ -31,7 +31,7 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
   const c = props.theme.colors;
   const sessions = data?.sessions ?? [];
   return (
-    <View style={{ padding: 12, gap: 8, backgroundColor: c.surface0 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: c.surface0 }} contentContainerStyle={{ padding: 12, gap: 8 }}>
       {data == null ? (
         <Text style={{ color: c.foregroundMuted }}>loading…</Text>
       ) : !data.present ? (
@@ -110,16 +110,20 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
             ) : null}
           </OmCard>
 
-          <Text style={{ fontSize: 12, fontWeight: "600" as const, color: c.foreground }}>
-            Recent events (newest first)
-          </Text>
-          {data.events.map((e, i) => (
-            <Text key={i} style={{ fontSize: 12, color: c.foregroundMuted }}>
-              {new Date(e.ts).toLocaleTimeString("en-GB", { hour12: false })} · {e.text.split("\n")[0]}
-            </Text>
-          ))}
+          <OmCard c={c} noRail>
+            <OmSection c={c}>Recent events (newest first)</OmSection>
+            {data.events.length === 0 ? (
+              <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>no events yet</Text>
+            ) : (
+              data.events.map((e, i) => (
+                <Text key={i} style={{ fontSize: 12, color: c.foregroundMuted }}>
+                  {new Date(e.ts).toLocaleTimeString("en-GB", { hour12: false })} · {e.text.split("\n")[0]}
+                </Text>
+              ))
+            )}
+          </OmCard>
         </>
       )}
-    </View>
+    </ScrollView>
   );
 }

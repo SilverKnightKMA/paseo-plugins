@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin";
 import { useRpc } from "@getpaseo/plugin";
 import { GetSnipStateRpc, SetSnipStateRpc, type SnipState } from "./rpc.js";
@@ -93,7 +93,7 @@ export function SnipPanel(props: PluginWorkspacePanelProps) {
   const chipStyle = { backgroundColor: c.surface1, borderColor: c.border, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 };
 
   return (
-    <View style={{ flex: 1, padding: 12, gap: 8, backgroundColor: c.surface0 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: c.surface0 }} contentContainerStyle={{ padding: 12, gap: 8 }}>
       {data == null ? (
         <Text style={{ color: c.foregroundMuted }}>loading…</Text>
       ) : !data.present ? (
@@ -142,6 +142,6 @@ export function SnipPanel(props: PluginWorkspacePanelProps) {
           </OmCard>
         </>
       )}
-    </View>
+    </ScrollView>
   );
 }

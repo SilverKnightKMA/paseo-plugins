@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { Text, View, ScrollView } from "react-native";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin";
 import { useRpc } from "@getpaseo/plugin";
 import { GetTaskStateRpc, type TaskPanelState } from "./rpc.js";
@@ -83,7 +83,21 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
           </Text>
         ) : null}
         {isReady && t.status === "pending" ? (
-          <Text style={{ color: c.accent, fontSize: 11, paddingLeft: 20, opacity: 0.85 }}>ready — safe to parallelize</Text>
+          <View
+            style={{
+              alignSelf: "flex-start",
+              backgroundColor: c.surface1,
+              borderColor: c.accent,
+              borderWidth: 1,
+              borderRadius: 8,
+              paddingHorizontal: 8,
+              paddingVertical: 2,
+              marginLeft: 20,
+              marginTop: 2,
+            }}
+          >
+            <Text style={{ color: c.accent, fontSize: 11 }}>ready — safe to parallelize</Text>
+          </View>
         ) : null}
       </View>
     );
@@ -94,7 +108,7 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
   const open = visible.filter((t) => t.status !== "completed");
 
   return (
-    <View style={{ flex: 1, padding: 12, gap: 8, backgroundColor: c.surface0 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: c.surface0 }} contentContainerStyle={{ padding: 12, gap: 8 }}>
       {data == null ? (
         <Text style={{ color: c.foregroundMuted }}>loading…</Text>
       ) : !data.present ? (
@@ -144,6 +158,6 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
           </Text>
         </>
       )}
-    </View>
+    </ScrollView>
   );
 }
