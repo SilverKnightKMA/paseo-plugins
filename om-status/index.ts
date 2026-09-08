@@ -40,8 +40,23 @@ type AgentLike = {
   /** most "focused" server-side: the agent that received the latest user message */
   lastUserMessageAt?: string | null;
   title?: string | null;
+  labels?: Record<string, unknown> | null;
+  archivedAt?: string | null;
   runtimeInfo?: { sessionId?: string | null } | null;
 };
+
+/** Workers (OM observer/consolidator, researchers…) carry subagent labels —
+ *  they never run OM in their own session, so they must not be picked as the
+ *  workspace representative (v1.0.27: fixes "OM not running" while a worker ran). */
+function isSubagentAgent(a: AgentLike): boolean {
+  const labels = a.labels;
+  if (!labels) return false;
+  return Boolean(labels["subagent.role"] ?? labels["subagent.parent"] ?? labels["paseo.parent-agent-id"]);
+}
+
+function isMainChat(a: AgentLike): boolean {
+  return a.archivedAt == null && !isSubagentAgent(a);
+}
 
 /** Wire entries are wrappers: { agent: <snapshot> }. Unwrap defensively. */
 function unwrapAgents(entries: unknown[]): AgentLike[] {
@@ -96,8 +111,12 @@ async function readOmStatus(
         resolved = { agentId: input.agentId, agentTitle: agent?.title ?? null, sessionId, status: agent?.status ?? null, via: "agent" };
     } else {
       const inWs = agents.filter((a) => a.workspaceId === input.workspaceId);
-      const running = inWs.filter((a) => a.status === "running");
-      const pool = running.length > 0 ? running : inWs;
+      // v1.0.27: prefer MAIN chats only — running workers (observer/researcher)
+      // used to win the "running" pool and flip the panel to a session with no OM.
+      const mainPool = inWs.filter(isMainChat);
+      const pool0 = mainPool.length > 0 ? mainPool : inWs;
+      const running = pool0.filter((a) => a.status === "running");
+      const pool = running.length > 0 ? running : pool0;
       const ts = (a: AgentLike) => Math.max(Date.parse(a.lastUserMessageAt ?? "") || 0, Date.parse(a.updatedAt ?? "") || 0);
       const agent = pool.sort((a, b) => ts(b) - ts(a))[0];
       const sessionId = agent?.runtimeInfo?.sessionId ?? null;
@@ -151,7 +170,10 @@ async function readOmStatus(
         workspace: directory ? path.basename(directory) : directory,
         resolved,
         sessions,
-        note: "this session has no om-status.json yet (OM off or no events)",
+        note:
+          `no om-status.json for session ${resolved.sessionId.slice(0, 8)}` +
+          (resolved.agentTitle ? ` (agent "${resolved.agentTitle}")` : "") +
+          " — OM is off in that session; pick another session below if you meant a different one",
       };
     }
     const data = parsed.data;

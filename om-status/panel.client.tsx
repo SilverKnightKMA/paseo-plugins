@@ -36,7 +36,10 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
         <Text style={{ color: c.foregroundMuted }}>loading…</Text>
       ) : !data.present ? (
         <OmCard c={c} noRail>
-          <Text style={{ fontSize: 13, color: c.foreground }}>OM not running in this workspace</Text>
+          <Text style={{ fontSize: 13, color: c.foreground }}>
+            OM not active for session {(data.resolved?.sessionId ?? "?").slice(0, 8)}
+            {data.resolved?.via ? omViaSuffix(data.resolved.via) : ""}
+          </Text>
           <Text style={{ fontSize: 12, color: c.foregroundMuted, marginTop: 4 }}>
             {data.note ?? "/om on in the session to enable observational-memory — this panel will update itself."}
           </Text>
