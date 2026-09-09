@@ -134,11 +134,21 @@ async function readOmStatus(
     // 2) enumerate per-session files for the side list (display only)
     const memoryDir = path.join(directory, ".memory");
     const sessionDirs = (await readdir(memoryDir, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name);
+    // v1.0.29: chips list only sessions the daemon still knows — main-chat
+    // agents of THIS workspace. Dead chats (agent killed/archived) drop off,
+    // mirroring the task panel's scoping doctrine. No metadata → no filter.
+    const knownMains = new Set(
+      agents
+        .filter((a) => a.workspaceId === input.workspaceId && isMainChat(a))
+        .map((a) => a.runtimeInfo?.sessionId ?? null)
+        .filter((s): s is string => Boolean(s)),
+    );
     // title cache: keeps names for dead sessions (agent process gone) — the live
     // map beats the cache; both plugins write the same ~/.paseo/plugin-data/ file
     const titleCache = mergeLiveTitles(titleBySession);
     const sessions: { sessionId: string; ageSec: number; title: string | null; topicFiles: number; active: boolean }[] = [];
     for (const sessionId of sessionDirs) {
+      if (knownMains.size > 0 && !knownMains.has(sessionId)) continue; // v1.0.29: daemon-known main chats only
       try {
         const mtime = (await stat(path.join(memoryDir, sessionId, "om-status.json"))).mtimeMs;
         // topic count mirrors om-panel listSessions: *.md minus INDEX.md
