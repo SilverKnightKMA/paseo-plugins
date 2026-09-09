@@ -315,6 +315,16 @@ export default function contribute(plugin: PluginContext) {
       status: z.enum(["pending", "in_progress", "completed", "cancelled", "parked"]),
     }),
   );
+  // v1.0.32: optional prev→next diff for the affected task (absent on task_list
+  // and on older engine builds — both render the full checklist as before).
+  const snapshotChangesSchema = z.array(
+    z.object({
+      id: z.number().int(),
+      subject: z.string(),
+      from: z.enum(["pending", "in_progress", "completed", "cancelled", "parked"]).nullable(),
+      to: z.enum(["pending", "in_progress", "completed", "cancelled", "parked"]),
+    }),
+  );
 
   plugin.addTimelineTransformer({
     id: "task-snapshot-transformer",
@@ -329,13 +339,18 @@ export default function contribute(plugin: PluginContext) {
       if (!details || typeof details !== "object") return undefined;
       const tasks = snapshotTasksSchema.safeParse(Reflect.get(details as Record<string, unknown>, "tasks"));
       if (!tasks.success || tasks.data.length === 0) return undefined;
+      const changesParsed = snapshotChangesSchema.safeParse(Reflect.get(details as Record<string, unknown>, "changes"));
       return {
         items: [
           {
             type: "plugin" as const,
             kind: "task-snapshot",
             version: 1,
-            data: { tool: it.name as "task_create" | "task_update" | "task_list", tasks: tasks.data },
+            data: {
+              tool: it.name as "task_create" | "task_update" | "task_list",
+              tasks: tasks.data,
+              ...(changesParsed.success && changesParsed.data.length > 0 ? { changes: changesParsed.data } : {}),
+            },
           },
         ],
       };
@@ -348,6 +363,7 @@ export default function contribute(plugin: PluginContext) {
     schema: z.object({
       tool: z.enum(["task_create", "task_update", "task_list"]),
       tasks: snapshotTasksSchema,
+      changes: snapshotChangesSchema.optional(),
     }),
     Component: TaskSnapshotCard,
   });

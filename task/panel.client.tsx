@@ -18,6 +18,8 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
   const write = useRpc(SetTaskControlRpc);
   const [data, setData] = useState<TaskPanelState | null>(null);
   const [picked, setPicked] = useState<string | null>(null); // chips override
+  const [hideDone, setHideDone] = useState(true); // v1.0.32: hide completed by default (user request)
+  const [compact, setCompact] = useState(false); // v1.0.32: collapse descriptions to one-line rows
 
   const refresh = useCallback(async () => {
     try {
@@ -88,10 +90,12 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
             >
               #{t.id} {t.subject}
             </Text>
-            {t.description ? <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>{t.description}</Text> : null}
+            {t.description && !compact ? (
+              <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>{t.description}</Text>
+            ) : null}
           </View>
         </View>
-        {t.status === "completed" && t.evidence ? (
+        {t.status === "completed" && t.evidence && !compact ? (
           <Text style={{ color: c.statusSuccess, fontSize: 11, paddingLeft: 20, opacity: 0.85 }}>evidence: {t.evidence}</Text>
         ) : null}
         {t.status === "parked" ? (
@@ -135,18 +139,18 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
             </Pressable>
           ) : null}
         </View>
-        {t.judgeRounds && t.judgeRounds > 0 ? (
+        {t.judgeRounds && t.judgeRounds > 0 && !compact ? (
           <Text style={{ color: c.foregroundMuted, fontSize: 11, paddingLeft: 20 }}>
             judge rounds: {t.judgeRounds}
             {t.failStreak && t.failStreak > 0 ? ` · fail-streak ${t.failStreak}/2` : ""}
           </Text>
         ) : null}
-        {openBlockers.length > 0 ? (
+        {openBlockers.length > 0 && !compact ? (
           <Text style={{ color: c.statusWarning, fontSize: 11, paddingLeft: 20 }}>
             blocked by {openBlockers.map((b) => `#${b.id}`).join(", ")}
           </Text>
         ) : null}
-        {isReady && t.status === "pending" ? (
+        {isReady && t.status === "pending" && !compact ? (
           <View
             style={{
               alignSelf: "flex-start",
@@ -167,9 +171,28 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
     );
   };
 
-  const visible = (data?.tasks ?? []).filter((t) => t.status !== "cancelled");
+  const allNotCancelled = (data?.tasks ?? []).filter((t) => t.status !== "cancelled");
   const cancelled = (data?.tasks ?? []).filter((t) => t.status === "cancelled");
+  const visible = hideDone ? allNotCancelled.filter((t) => t.status !== "completed") : allNotCancelled;
+  const doneHidden = allNotCancelled.filter((t) => t.status === "completed").length;
   const open = visible.filter((t) => t.status !== "completed");
+
+  /** v1.0.32 view toggles: hide-completed + compact rows (user request). */
+  const toggleChip = (label: string, active: boolean, onPress: () => void) => (
+    <Pressable
+      onPress={onPress}
+      style={{
+        backgroundColor: active ? c.surface1 : "transparent",
+        borderColor: active ? c.accent : c.border,
+        borderWidth: 1,
+        borderRadius: 8,
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+      }}
+    >
+      <Text style={{ color: active ? c.accent : c.foregroundMuted, fontSize: 11 }}>{label}</Text>
+    </Pressable>
+  );
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: c.surface0 }} contentContainerStyle={{ padding: 12, gap: 8 }}>
@@ -200,6 +223,13 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
             selectedId={sessionId}
             onPick={(id) => setPicked(id)}
           />
+
+          <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+            {toggleChip(hideDone ? `Ẩn đã xong ✓${doneHidden ? ` (${doneHidden})` : ""}` : "Hiện đã xong", hideDone, () =>
+              setHideDone((v) => !v),
+            )}
+            {toggleChip(compact ? "Thu gọn ✓" : "Thu gọn", compact, () => setCompact((v) => !v))}
+          </View>
 
           <OmCard c={c}>
             <OmSection c={c}>TASKS — {open.length} open</OmSection>
