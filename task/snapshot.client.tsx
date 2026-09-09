@@ -3,7 +3,11 @@ import type { PluginTimelineItemProps } from "@getpaseo/plugin";
 
 export type TaskSnapshotData = {
   tool: "task_create" | "task_update" | "task_list";
-  tasks: { id: number; subject: string; status: "pending" | "in_progress" | "completed" | "cancelled" }[];
+  tasks: {
+    id: number;
+    subject: string;
+    status: "pending" | "in_progress" | "completed" | "cancelled" | "parked";
+  }[];
 };
 
 /**
@@ -23,12 +27,14 @@ export function TaskSnapshotCard(props: PluginTimelineItemProps<TaskSnapshotData
     in_progress: "▶",
     pending: "·",
     cancelled: "×",
+    parked: "⏸",
   } as const;
   const markerColor = {
     completed: c.statusSuccess,
     in_progress: c.accent,
     pending: c.foregroundMuted,
     cancelled: c.foregroundMuted,
+    parked: c.statusWarning,
   } as const;
 
   return (

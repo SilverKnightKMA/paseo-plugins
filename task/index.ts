@@ -89,6 +89,10 @@ async function readProjection(sessionId: string): Promise<TaskPanelState | null>
         blockedBy?: number[];
         blocks?: number[];
         updatedAt?: number;
+        failStreak?: number;
+        judgeRounds?: number;
+        appealReason?: string;
+        audit?: { verdict?: unknown; summary?: unknown };
       }>;
     };
     if (parsed.v !== 1) return null; // unknown projection version — refuse to render
@@ -96,15 +100,22 @@ async function readProjection(sessionId: string): Promise<TaskPanelState | null>
       id: t.id,
       subject: t.subject,
       description: t.description ?? "",
-      status: (["pending", "in_progress", "completed", "cancelled"] as const).includes(
-        t.status as "pending" | "in_progress" | "completed" | "cancelled",
+      status: (["pending", "in_progress", "completed", "cancelled", "parked"] as const).includes(
+        t.status as "pending" | "in_progress" | "completed" | "cancelled" | "parked",
       )
-        ? (t.status as "pending" | "in_progress" | "completed" | "cancelled")
+        ? (t.status as "pending" | "in_progress" | "completed" | "cancelled" | "parked")
         : "pending",
       evidence: t.evidence ?? null,
       blockedBy: t.blockedBy ?? [],
       blocks: t.blocks ?? [],
       updatedAt: t.updatedAt ?? 0,
+      failStreak: typeof t.failStreak === "number" ? t.failStreak : undefined,
+      judgeRounds: typeof t.judgeRounds === "number" ? t.judgeRounds : undefined,
+      appealReason: typeof t.appealReason === "string" ? t.appealReason : undefined,
+      audit:
+        t.audit && typeof t.audit === "object" && typeof (t.audit as { verdict?: unknown }).verdict === "string"
+          ? { verdict: (t.audit as { verdict: string }).verdict, summary: String((t.audit as { summary?: unknown }).summary ?? "") }
+          : undefined,
     }));
     return {
       present: true,
@@ -263,7 +274,7 @@ export default function contribute(plugin: PluginContext) {
     z.object({
       id: z.number().int(),
       subject: z.string(),
-      status: z.enum(["pending", "in_progress", "completed", "cancelled"]),
+      status: z.enum(["pending", "in_progress", "completed", "cancelled", "parked"]),
     }),
   );
 

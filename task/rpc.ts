@@ -4,11 +4,18 @@ export const TaskBriefSchema = z.object({
   id: z.number(),
   subject: z.string(),
   description: z.string(),
-  status: z.enum(["pending", "in_progress", "completed", "cancelled"]),
+  status: z.enum(["pending", "in_progress", "completed", "cancelled", "parked"]),
   evidence: z.string().nullable(),
   blockedBy: z.array(z.number()),
   blocks: z.array(z.number()),
   updatedAt: z.number(),
+  /** layer-2 (v1.4.26): judge counters + park reason — optional for older projections */
+  failStreak: z.number().optional(),
+  judgeRounds: z.number().optional(),
+  appealReason: z.string().optional(),
+  audit: z
+    .object({ verdict: z.string(), summary: z.string() })
+    .optional(),
 });
 
 /**

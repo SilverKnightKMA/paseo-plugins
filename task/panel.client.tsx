@@ -48,6 +48,7 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
     in_progress: { glyph: "▶", color: c.accent },
     pending: { glyph: "·", color: c.foregroundMuted },
     cancelled: { glyph: "×", color: c.foregroundMuted },
+    parked: { glyph: "⏸", color: c.statusWarning },
   };
 
   const row = (t: TaskPanelState["tasks"][number], all: TaskPanelState["tasks"]) => {
@@ -76,6 +77,17 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
         </View>
         {t.status === "completed" && t.evidence ? (
           <Text style={{ color: c.statusSuccess, fontSize: 11, paddingLeft: 20, opacity: 0.85 }}>evidence: {t.evidence}</Text>
+        ) : null}
+        {t.status === "parked" ? (
+          <Text style={{ color: c.statusWarning, fontSize: 11, paddingLeft: 20 }}>
+            parked (chờ user): {t.appealReason ?? "—"}
+          </Text>
+        ) : null}
+        {t.judgeRounds && t.judgeRounds > 0 ? (
+          <Text style={{ color: c.foregroundMuted, fontSize: 11, paddingLeft: 20 }}>
+            judge rounds: {t.judgeRounds}
+            {t.failStreak && t.failStreak > 0 ? ` · fail-streak ${t.failStreak}/2` : ""}
+          </Text>
         ) : null}
         {openBlockers.length > 0 ? (
           <Text style={{ color: c.statusWarning, fontSize: 11, paddingLeft: 20 }}>
