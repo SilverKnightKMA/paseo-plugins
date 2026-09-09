@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Text, View, ScrollView } from "react-native";
+import { Pressable, Text, View, ScrollView } from "react-native";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin";
 import { useRpc } from "@getpaseo/plugin";
-import { GetTaskStateRpc, type TaskPanelState } from "./rpc.js";
+import { GetTaskStateRpc, SetTaskControlRpc, type TaskPanelState } from "./rpc.js";
 import { OmCard, OmHeader, OmSection, OmSessionPicker, omTimeAgo, omViaSuffix } from "./ui.js";
 
 const POLL_MS = 2000;
@@ -15,6 +15,7 @@ const POLL_MS = 2000;
 export function TaskPanel(props: PluginWorkspacePanelProps) {
   const c = props.theme.colors;
   const read = useRpc(GetTaskStateRpc);
+  const write = useRpc(SetTaskControlRpc);
   const [data, setData] = useState<TaskPanelState | null>(null);
   const [picked, setPicked] = useState<string | null>(null); // chips override
 
@@ -51,6 +52,21 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
     parked: { glyph: "⏸", color: c.statusWarning },
   };
 
+  /** User-only control actions (v1.0.31): fire the control file + refresh. */
+  const sendControl = useCallback(
+    async (id: number, action: "unpark" | "strict", value?: boolean) => {
+      const sid = data?.sessionId;
+      if (!sid) return;
+      try {
+        await write({ workspaceId: props.workspaceId, sessionId: sid, id, action, value });
+      } catch {
+        // engine offline → file sits unacked; next poll still shows old state
+      }
+      void refresh();
+    },
+    [data?.sessionId, props.workspaceId, refresh, write],
+  );
+
   const row = (t: TaskPanelState["tasks"][number], all: TaskPanelState["tasks"]) => {
     const g = statusGlyph[t.status] ?? statusGlyph.pending!;
     const openBlockers = t.blockedBy
@@ -83,6 +99,42 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
             parked (chờ user): {t.appealReason ?? "—"}
           </Text>
         ) : null}
+        {/* user-only row actions: un-park a parked task; STRICT toggle for
+            any verify task (raise/lower — model can only raise, v1.4.28) */}
+        <View style={{ flexDirection: "row", gap: 6, marginLeft: 20, marginTop: 2 }}>
+          {t.status === "parked" ? (
+            <Pressable
+              onPress={() => void sendControl(t.id, "unpark")}
+              style={{
+                backgroundColor: c.surface1,
+                borderColor: c.statusWarning,
+                borderWidth: 1,
+                borderRadius: 8,
+                paddingHorizontal: 8,
+                paddingVertical: 2,
+              }}
+            >
+              <Text style={{ color: c.statusWarning, fontSize: 11 }}>⏸ mở lại (user)</Text>
+            </Pressable>
+          ) : null}
+          {t.verify ? (
+            <Pressable
+              onPress={() => void sendControl(t.id, "strict", !t.verify!.strict)}
+              style={{
+                backgroundColor: t.verify.strict ? c.surface1 : "transparent",
+                borderColor: t.verify.strict ? c.accent : c.foregroundMuted,
+                borderWidth: 1,
+                borderRadius: 8,
+                paddingHorizontal: 8,
+                paddingVertical: 2,
+              }}
+            >
+              <Text style={{ color: t.verify.strict ? c.accent : c.foregroundMuted, fontSize: 11 }}>
+                {t.verify.strict ? "STRICT ✓" : `strict · ${t.verify.lane}(${t.verify.probeCount})`}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
         {t.judgeRounds && t.judgeRounds > 0 ? (
           <Text style={{ color: c.foregroundMuted, fontSize: 11, paddingLeft: 20 }}>
             judge rounds: {t.judgeRounds}

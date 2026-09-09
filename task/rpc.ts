@@ -13,6 +13,14 @@ export const TaskBriefSchema = z.object({
   failStreak: z.number().optional(),
   judgeRounds: z.number().optional(),
   appealReason: z.string().optional(),
+  /** verify spec (projection v1.4.21+): powers the user STRICT toggle */
+  verify: z
+    .object({
+      lane: z.enum(["state", "judgment"]),
+      strict: z.boolean(),
+      probeCount: z.number(),
+    })
+    .optional(),
   audit: z
     .object({ verdict: z.string(), summary: z.string() })
     .optional(),
@@ -73,3 +81,29 @@ export const GetTaskStateRpc = {
 };
 
 export type TaskPanelState = z.infer<typeof GetTaskStateRpc.output>;
+
+/**
+ * USER-ONLY task actions via the control-file bridge (v1.4.28 engine / v1.0.31
+ * plugin). The model may put a task INTO park (appeal, round cap) but only the
+ * user surface may take it out; likewise lowering strict is user-only. This
+ * RPC never touches task state directly — it writes
+ * ~/.pi/agent/task-control/<sessionId>.json and the engine (single writer)
+ * applies + acks it (snip bridge pattern).
+ */
+export const SetTaskControlRpc = {
+  name: "task.set-control",
+  input: z.object({
+    workspaceId: z.string(),
+    sessionId: z.string(),
+    id: z.number().int().positive(),
+    action: z.enum(["unpark", "strict"]),
+    /** strict only: target value (unpark ignores it) */
+    value: z.boolean().nullish(),
+  }),
+  output: z.object({
+    ok: z.boolean(),
+    /** the engine acks by rewriting the file with ackAt >= sentAt */
+    sentAt: z.string(),
+    note: z.string().nullish(),
+  }),
+};

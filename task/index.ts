@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, mkdir, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { PluginContext } from "@getpaseo/plugin";
@@ -6,7 +6,7 @@ import { z } from "zod";
 import { TaskPanel } from "./panel.client";
 import { startTaskLive } from "./pill.client";
 import { TaskSnapshotCard } from "./snapshot.client";
-import { GetTaskStateRpc, type TaskPanelState } from "./rpc.js";
+import { GetTaskStateRpc, SetTaskControlRpc, type TaskPanelState } from "./rpc.js";
 import { mergeLiveTitles, titleFor } from "./titles.js";
 
 const EMPTY: TaskPanelState = {
@@ -92,6 +92,7 @@ async function readProjection(sessionId: string): Promise<TaskPanelState | null>
         failStreak?: number;
         judgeRounds?: number;
         appealReason?: string;
+        verify?: { lane?: unknown; strict?: unknown; probes?: unknown[] };
         audit?: { verdict?: unknown; summary?: unknown };
       }>;
     };
@@ -112,6 +113,14 @@ async function readProjection(sessionId: string): Promise<TaskPanelState | null>
       failStreak: typeof t.failStreak === "number" ? t.failStreak : undefined,
       judgeRounds: typeof t.judgeRounds === "number" ? t.judgeRounds : undefined,
       appealReason: typeof t.appealReason === "string" ? t.appealReason : undefined,
+      verify:
+        t.verify && typeof t.verify === "object" && typeof t.verify.strict === "boolean"
+          ? {
+              lane: t.verify.lane === "judgment" ? ("judgment" as const) : ("state" as const),
+              strict: t.verify.strict,
+              probeCount: Array.isArray(t.verify.probes) ? t.verify.probes.length : 0,
+            }
+          : undefined,
       audit:
         t.audit && typeof t.audit === "object" && typeof (t.audit as { verdict?: unknown }).verdict === "string"
           ? { verdict: (t.audit as { verdict: string }).verdict, summary: String((t.audit as { summary?: unknown }).summary ?? "") }
@@ -236,6 +245,35 @@ async function readTaskState(
 
 export default function contribute(plugin: PluginContext) {
   plugin.handle(GetTaskStateRpc, async (input, context) => readTaskState(input, context));
+
+  // User-only actions: write the control file, the engine applies + acks it.
+  // Never touches task state directly — engine stays the single writer.
+  plugin.handle(SetTaskControlRpc, async (input) => {
+    try {
+      const home = process.env.HOME ?? os.homedir();
+      const dir = path.join(home, ".pi", "agent", "task-control");
+      await mkdir(dir, { recursive: true });
+      const file = path.join(dir, `${input.sessionId}.json`);
+      const sentAt = new Date().toISOString();
+      const payload = {
+        v: 1,
+        action: input.action,
+        id: input.id,
+        ...(input.action === "strict" ? { value: input.value ?? true } : {}),
+        sentAt,
+      };
+      const tmp = `${file}.tmp-${process.pid}`;
+      await writeFile(tmp, JSON.stringify(payload), "utf8");
+      await rename(tmp, file);
+      return {
+        ok: true,
+        sentAt,
+        note: `engine áp dụng trong ~1s — panel sẽ tự refresh (ack = engine online)`,
+      };
+    } catch {
+      return { ok: false, sentAt: "", note: "write failed — is ~/.pi/agent/task-control writable?" };
+    }
+  });
 
   plugin.addWorkspacePanel({
     id: "task",
