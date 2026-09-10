@@ -56,7 +56,7 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
 
   /** User-only control actions (v1.0.31): fire the control file + refresh. */
   const sendControl = useCallback(
-    async (id: number, action: "unpark" | "strict", value?: boolean) => {
+    async (id: number, action: "unpark" | "strict" | "reopen", value?: boolean) => {
       const sid = data?.sessionId;
       if (!sid) return;
       try {
@@ -104,7 +104,8 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
           </Text>
         ) : null}
         {/* user-only row actions: un-park a parked task; STRICT toggle for
-            any verify task (raise/lower — model can only raise, v1.4.28) */}
+            any verify task (raise/lower — model can only raise, v1.4.28);
+            REOPEN a closed task (v1.4.35 — evidence stays on record) */}
         <View style={{ flexDirection: "row", gap: 6, marginLeft: 20, marginTop: 2 }}>
           {t.status === "parked" ? (
             <Pressable
@@ -119,6 +120,21 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
               }}
             >
               <Text style={{ color: c.statusWarning, fontSize: 11 }}>⏸ mở lại (user)</Text>
+            </Pressable>
+          ) : null}
+          {(t.status === "completed" || t.status === "cancelled") && !hideDone ? (
+            <Pressable
+              onPress={() => void sendControl(t.id, "reopen")}
+              style={{
+                backgroundColor: c.surface1,
+                borderColor: c.foregroundMuted,
+                borderWidth: 1,
+                borderRadius: 8,
+                paddingHorizontal: 8,
+                paddingVertical: 2,
+              }}
+            >
+              <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>↺ mở lại (user)</Text>
             </Pressable>
           ) : null}
           {t.verify ? (

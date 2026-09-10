@@ -96,7 +96,7 @@ export const SetTaskControlRpc = {
     workspaceId: z.string(),
     sessionId: z.string(),
     id: z.number().int().positive(),
-    action: z.enum(["unpark", "strict"]),
+    action: z.enum(["unpark", "strict", "reopen"]),
     /** strict only: target value (unpark ignores it) */
     value: z.boolean().nullish(),
   }),
