@@ -1,3 +1,6 @@
 {
-  "id": "om-panel"
+  "id": "om-panel",
+  "requirements": {
+    "paseo": ">=0.8.0"
+  }
 }

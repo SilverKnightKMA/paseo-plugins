@@ -1,12 +1,9 @@
-import { readFile, readdir, mkdir, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { PluginContext } from "@getpaseo/plugin";
-import { z } from "zod";
-import { TaskPanel } from "./panel.client";
-import { startTaskLive } from "./pill.client";
-import { TaskSnapshotCard } from "./snapshot.client";
-import { GetTaskStateRpc, SetTaskControlRpc, type TaskPanelState } from "./rpc.js";
+import { readFile, readdir, mkdir, rename, writeFile } from "node:fs/promises";
+import type { RpcInput } from "@getpaseo/plugin";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
+import { GetTaskStateRpc, SetTaskControlRpc, type TaskPanelState } from "../shared/rpc.js";
 import { mergeLiveTitles, titleFor } from "./titles.js";
 
 const EMPTY: TaskPanelState = {
@@ -155,9 +152,9 @@ async function listSessionFiles(): Promise<string[]> {
   }
 }
 
-async function readTaskState(
-  input: { workspaceId: string; agentId?: string | null; sessionId?: string | null },
-  context: Parameters<Parameters<PluginContext["handle"]>[1]>[1],
+export async function readTaskState(
+  input: RpcInput<typeof GetTaskStateRpc>,
+  context: PluginHandlerContext,
 ): Promise<TaskPanelState> {
   try {
     let agents: AgentLike[] = [];
@@ -243,130 +240,31 @@ async function readTaskState(
   }
 }
 
-export default function contribute(plugin: PluginContext) {
-  plugin.handle(GetTaskStateRpc, async (input, context) => readTaskState(input, context));
-
-  // User-only actions: write the control file, the engine applies + acks it.
-  // Never touches task state directly — engine stays the single writer.
-  plugin.handle(SetTaskControlRpc, async (input) => {
-    try {
-      const home = process.env.HOME ?? os.homedir();
-      const dir = path.join(home, ".pi", "agent", "task-control");
-      await mkdir(dir, { recursive: true });
-      const file = path.join(dir, `${input.sessionId}.json`);
-      const sentAt = new Date().toISOString();
-      const payload = {
-        v: 1,
-        action: input.action,
-        id: input.id,
-        ...(input.action === "strict" ? { value: input.value ?? true } : {}),
-        sentAt,
-      };
-      const tmp = `${file}.tmp-${process.pid}`;
-      await writeFile(tmp, JSON.stringify(payload), "utf8");
-      await rename(tmp, file);
-      return {
-        ok: true,
-        sentAt,
-        note: `engine áp dụng trong ~1s — panel sẽ tự refresh (ack = engine online)`,
-      };
-    } catch {
-      return { ok: false, sentAt: "", note: "write failed — is ~/.pi/agent/task-control writable?" };
-    }
-  });
-
-  plugin.addWorkspacePanel({
-    id: "task",
-    title: "Tasks",
-    icon: "ListTodo",
-    context: "workspace",
-    Component: TaskPanel,
-  });
-
-  plugin.addCommandCenterItem({
-    id: "task-open",
-    title: "Tasks: session task list (read-only)",
-    icon: "ListTodo",
-    keywords: ["task", "tasks", "todo", "plan", "progress"],
-    context: "workspace",
-    onSelect(context_: { openPanel: (id: string) => void }) {
-      context_.openPanel("task");
-    },
-  });
-
-  // Composer pill: done/total gauge next to the agent badge, model-invisible
-  // by construction (client render layer only, never in pi's state.messages).
-  plugin.addClientSide((client) => startTaskLive(client));
-
-  // ── In-flow task checklist cards (v1.0.26) ────────────────────────────
-  // The pi task extension (≥ v1.4.23) rides a full task snapshot in every
-  // task_* tool result's `details` (model-invisible metadata). The
-  // transformer parses it and replaces the raw tool-call entry with a
-  // versioned plugin card — the maintainer-blessed pattern from the official
-  // pi-tasks timeline example (getpaseo/paseo PR #3940; native mapping was
-  // closed not-planned in #3121). Sessions on older ext code (no
-  // details.tasks) fall through untouched. Render-layer only: the transcript
-  // tool result stays intact for the model.
-  const taskToolNames = new Set(["task_create", "task_update", "task_list"]);
-  const snapshotTasksSchema = z.array(
-    z.object({
-      id: z.number().int(),
-      subject: z.string(),
-      status: z.enum(["pending", "in_progress", "completed", "cancelled", "parked"]),
-    }),
-  );
-  // v1.0.32: optional prev→next diff for the affected task (absent on task_list
-  // and on older engine builds — both render the full checklist as before).
-  const snapshotChangesSchema = z.array(
-    z.object({
-      id: z.number().int(),
-      subject: z.string(),
-      from: z.enum(["pending", "in_progress", "completed", "cancelled", "parked"]).nullable(),
-      to: z.enum(["pending", "in_progress", "completed", "cancelled", "parked"]),
-    }),
-  );
-
-  plugin.addTimelineTransformer({
-    id: "task-snapshot-transformer",
-    query: { itemType: "tool_call" },
-    transform: ({ item }) => {
-      const it = item as { type?: string; name?: unknown; detail?: unknown };
-      if (it.type !== "tool_call") return undefined;
-      if (typeof it.name !== "string" || !taskToolNames.has(it.name)) return undefined;
-      const detail = it.detail as { output?: unknown } | undefined;
-      if (!detail || typeof detail.output !== "object" || detail.output === null) return undefined;
-      const details = Reflect.get(detail.output as Record<string, unknown>, "details");
-      if (!details || typeof details !== "object") return undefined;
-      const tasks = snapshotTasksSchema.safeParse(Reflect.get(details as Record<string, unknown>, "tasks"));
-      if (!tasks.success || tasks.data.length === 0) return undefined;
-      const changesParsed = snapshotChangesSchema.safeParse(Reflect.get(details as Record<string, unknown>, "changes"));
-      return {
-        items: [
-          {
-            type: "plugin" as const,
-            kind: "task-snapshot",
-            version: 1,
-            data: {
-              tool: it.name as "task_create" | "task_update" | "task_list",
-              tasks: tasks.data,
-              ...(changesParsed.success && changesParsed.data.length > 0 ? { changes: changesParsed.data } : {}),
-            },
-          },
-        ],
-      };
-    },
-  });
-
-  plugin.addTimelineRenderer({
-    kind: "task-snapshot",
-    version: 1,
-    schema: z.object({
-      tool: z.enum(["task_create", "task_update", "task_list"]),
-      tasks: snapshotTasksSchema,
-      changes: snapshotChangesSchema.optional(),
-    }),
-    Component: TaskSnapshotCard,
-  });
-
-  return () => {};
+/**
+ * User-only actions: write the control file, the engine applies + acks it.
+ * Never touches task state directly — engine stays the single writer.
+ */
+export async function writeTaskControl(
+  input: RpcInput<typeof SetTaskControlRpc>,
+): Promise<{ ok: boolean; sentAt: string; note: string }> {
+  const home = process.env.HOME ?? os.homedir();
+  const dir = path.join(home, ".pi", "agent", "task-control");
+  await mkdir(dir, { recursive: true });
+  const file = path.join(dir, `${input.sessionId}.json`);
+  const sentAt = new Date().toISOString();
+  const payload = {
+    v: 1,
+    action: input.action,
+    id: input.id,
+    ...(input.action === "strict" ? { value: input.value ?? true } : {}),
+    sentAt,
+  };
+  const tmp = `${file}.tmp-${process.pid}`;
+  await writeFile(tmp, JSON.stringify(payload), "utf8");
+  await rename(tmp, file);
+  return {
+    ok: true,
+    sentAt,
+    note: `engine áp dụng trong ~1s — panel sẽ tự refresh (ack = engine online)`,
+  };
 }

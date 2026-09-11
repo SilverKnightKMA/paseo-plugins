@@ -1,11 +1,9 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
-import type { PluginContext } from "@getpaseo/plugin";
 import { z } from "zod";
-import { OmStatusPanel } from "./panel.client";
-import { startOmLive } from "./live.client";
-import { OmHistoryCard } from "./history.client";
-import { GetOmStatusRpc, OmEventSchema, OmSummarySchema, type OmStatusState } from "./rpc.js";
+import type { RpcInput } from "@getpaseo/plugin";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
+import { GetOmStatusRpc, OmEventSchema, OmSummarySchema, type OmStatusState } from "../shared/rpc.js";
 import { mergeLiveTitles, titleFor } from "./titles.js";
 
 const OmStatusFileSchema = z.object({
@@ -68,9 +66,9 @@ function unwrapAgents(entries: unknown[]): AgentLike[] {
   return out;
 }
 
-async function readOmStatus(
-  input: { workspaceId: string; agentId?: string | null; sessionId?: string | null },
-  context: Parameters<Parameters<PluginContext["handle"]>[1]>[1],
+export async function readOmStatus(
+  input: RpcInput<typeof GetOmStatusRpc>,
+  context: PluginHandlerContext,
 ): Promise<OmStatusState> {
   const empty = emptyState();
   try {
@@ -203,73 +201,4 @@ async function readOmStatus(
   } catch {
     return empty;
   }
-}
-
-export default function contribute(plugin: PluginContext) {
-  plugin.handle(GetOmStatusRpc, async (input, context) => readOmStatus(input, context));
-
-  plugin.addWorkspacePanel({
-    id: "om-status",
-    title: "OM Status",
-    icon: "Brain",
-    context: "workspace",
-    Component: OmStatusPanel,
-  });
-
-  plugin.addCommandCenterItem({
-    id: "om-status-open",
-    title: "OM Status: live /om status",
-    icon: "Brain",
-    keywords: ["om", "memory", "status", "observer"],
-    context: "workspace",
-    onSelect(context_: { openPanel: (id: string) => void }) {
-      context_.openPanel("om-status");
-    },
-  });
-
-  // v1.3: live chat surfaces, model-invisible by construction — these exist
-  // only in the Paseo client render layer, never in pi's state.messages.
-  //   · ComposerPill: always-visible live gauge pinned to the composer
-  //   · timeline transformer+renderer: "om checkpoint" cards at compaction
-  //     points (compaction items are replaced 1:1 by plugin cards)
-  plugin.addClientSide((client) => startOmLive(client));
-  plugin.addTimelineTransformer({
-    id: "om-history-transformer",
-    query: { itemType: "compaction" },
-    // v1.3.1: only card-ify COMPLETED compactions — the "loading" item that comes
-    // first used to be replaced by an identical second card (2 adjacent dupes).
-    transform: ({ item }) => {
-      if (item.status !== "completed") return undefined;
-      return {
-      items: [
-        {
-          type: "plugin" as const,
-          kind: "om-history",
-          version: 1,
-          data: {
-            compaction: {
-              status: item.status,
-              trigger: item.trigger ?? null,
-              preTokens: item.preTokens ?? null,
-            },
-          },
-        },
-      ],
-      };
-    },
-  });
-  plugin.addTimelineRenderer({
-    kind: "om-history",
-    version: 1,
-    schema: z.object({
-      compaction: z.object({
-        status: z.string(),
-        trigger: z.string().nullable(),
-        preTokens: z.number().nullable(),
-      }),
-    }),
-    Component: OmHistoryCard,
-  });
-
-  return () => {};
 }

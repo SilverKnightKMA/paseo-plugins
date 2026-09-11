@@ -1,11 +1,10 @@
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { PluginContext } from "@getpaseo/plugin";
 import { z } from "zod";
-import { SnipPanel } from "./panel.client";
-import { startSnipLive } from "./pill.client";
-import { GetSnipStateRpc, SetSnipStateRpc, SnippetBriefSchema, type SnipState } from "./rpc.js";
+import type { RpcInput } from "@getpaseo/plugin";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
+import { GetSnipStateRpc, SetSnipStateRpc, SnippetBriefSchema, type SnipState } from "../shared/rpc.js";
 import { mergeLiveTitles, titleFor } from "./titles.js";
 
 const EMPTY: SnipState = {
@@ -130,9 +129,9 @@ async function readControlFile(sessionId: string) {
   }
 }
 
-async function readSnipState(
-  input: { workspaceId: string; agentId?: string | null; sessionId?: string | null },
-  context: Parameters<Parameters<PluginContext["handle"]>[1]>[1],
+export async function readSnipState(
+  input: RpcInput<typeof GetSnipStateRpc>,
+  context: PluginHandlerContext,
 ): Promise<SnipState> {
   try {
     let agents: AgentLike[] = [];
@@ -153,7 +152,7 @@ async function readSnipState(
     let rootDir: string | null = null;
     try {
       const ws = await context.paseo.workspaces.list();
-      const hit = ws.entries.find((w) => w.id === input.workspaceId);
+      const hit = ws.entries.find((w: { id?: string; projectRootPath?: string | null }) => w.id === input.workspaceId);
       rootDir = hit?.projectRootPath ?? null;
     } catch {
       // workspaces unavailable — cwd fallback disabled
@@ -256,7 +255,7 @@ async function readSnipState(
   }
 }
 
-async function writeSnipState(input: { sessionId: string; active: string[]; sticky: boolean }) {
+export async function writeSnipState(input: { sessionId: string; active: string[]; sticky: boolean }) {
   const file = controlFile(input.sessionId);
   const sentAt = new Date().toISOString();
   await mkdir(path.dirname(file), { recursive: true });
@@ -265,41 +264,4 @@ async function writeSnipState(input: { sessionId: string; active: string[]; stic
   await writeFile(tmp, JSON.stringify(payload), "utf8");
   await rename(tmp, file);
   return { ok: true, sentAt, note: null };
-}
-
-export default function contribute(plugin: PluginContext) {
-  plugin.handle(GetSnipStateRpc, async (input, context) => readSnipState(input, context));
-
-  plugin.handle(SetSnipStateRpc, async (input) => {
-    try {
-      return await writeSnipState(input);
-    } catch {
-      return { ok: false, sentAt: "", note: "write failed — is ~/.pi/agent/snip-control writable?" };
-    }
-  });
-
-  plugin.addWorkspacePanel({
-    id: "snip",
-    title: "Snip",
-    icon: "MessageSquare",
-    context: "workspace",
-    Component: SnipPanel,
-  });
-
-  plugin.addCommandCenterItem({
-    id: "snip-open",
-    title: "Snip: prompt snippets on/off",
-    icon: "MessageSquare",
-    keywords: ["snip", "snippet", "prompt", "rules"],
-    context: "workspace",
-    onSelect(context_: { openPanel: (id: string) => void }) {
-      context_.openPanel("snip");
-    },
-  });
-
-  // Composer pill: live active-count gauge per agent, model-invisible by
-  // construction (client render layer only, never in pi's state.messages).
-  plugin.addClientSide((client) => startSnipLive(client));
-
-  return () => {};
 }

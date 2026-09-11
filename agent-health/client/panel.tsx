@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Text, View, ScrollView } from "react-native";
-import { useRpc } from "@getpaseo/plugin";
-import type { PluginWorkspacePanelProps } from "@getpaseo/plugin";
-import { GetStateRpc, type AgentHealthState } from "./rpc.js";
+import { useRpc } from "@getpaseo/plugin/client";
+import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
+import { GetStateRpc, type AgentHealthState } from "../shared/rpc.js";
 
 function shortCwd(cwd: string): string {
   if (!cwd) {

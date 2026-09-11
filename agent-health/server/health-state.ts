@@ -1,13 +1,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { PluginContext } from "@getpaseo/plugin";
+import type { RpcInput } from "@getpaseo/plugin";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { z } from "zod";
-import { GetStateRpc, GetZwAlertRpc, ZwEventSchema, AgentRowSchema, StuckQueueSchema, SseProbeSchema } from "./rpc.js";
-import { HealthPanel } from "./panel.client.js";
-import { SubagentNoticeCard, type SubagentNoticeData } from "./subagent-notice.client.js";
-import { MutedAbortCard } from "./muted-abort.client.js";
-import { startZwLive } from "./zw-pill.client.js";
+import { GetStateRpc, GetZwAlertRpc, ZwEventSchema, StuckQueueSchema, SseProbeSchema } from "../shared/rpc.js";
 
 interface RawZwEvent {
   ts?: unknown;
@@ -153,8 +150,8 @@ function readStuckQueues(): unknown[] {
   return stuck;
 }
 
-export default function contribute(plugin: PluginContext) {
-  plugin.handle(GetStateRpc, async (input, context) => {
+export async function healthStateHandler(input: RpcInput<typeof GetStateRpc>, context: PluginHandlerContext) {
+
     const agents: { id: string; status: string | null; provider: string; model: string | null; cwd: string }[] = [];
     try {
       const result = await context.paseo.agents.list();
@@ -187,11 +184,10 @@ export default function contribute(plugin: PluginContext) {
       stuckQueues: StuckQueueSchema.array().parse(readStuckQueues()),
       generatedAt: new Date().toISOString(),
     };
-  });
+}
 
-  plugin.addClientSide((client) => startZwLive(client));
+export async function zwAlertHandler(input: RpcInput<typeof GetZwAlertRpc>) {
 
-  plugin.handle(GetZwAlertRpc, async (input) => {
     const FRESH_MS = 5 * 60_000;
     const ALERT_CODES = new Set(["zombie", "b2-settle-lost"]);
     const { events } = readZombieWatchdog(1);
@@ -209,133 +205,4 @@ export default function contribute(plugin: PluginContext) {
       agentId: last.agentId ?? null,
       mine: Boolean(input.agentId && last.agentId === input.agentId),
     };
-  });
-
-  plugin.addWorkspacePanel({
-    id: "agent-health",
-    title: "Agent Health",
-    icon: "Activity",
-    context: "workspace",
-    Component: HealthPanel,
-  });
-
-  plugin.addCommandCenterItem({
-    id: "agent-health-open",
-    title: "Agent Health: agents & zombie-watchdog",
-    icon: "Activity",
-    keywords: ["zombie", "watchdog", "health", "agents"],
-    context: "workspace",
-    onSelect(context_) {
-      context_.openPanel("agent-health");
-    },
-  });
-
-  // ── subagent notice cards ─────────────────────────────────────────────
-  // The subagent channel delivers <subagent-message …> blocks as plain
-  // user-message text; the app prints the raw tags + duplicated UUIDs.
-  // Transform (render-layer only) replaces them with a clean plugin card.
-  plugin.addTimelineTransformer({
-    id: "subagent-report-transformer",
-    query: { itemType: "user_message" },
-    transform: ({ item }) => {
-      if (item.type !== "user_message") return undefined;
-      // one user message may contain multiple envelopes (drain joins with "\n\n")
-      const parsedAll = parseAllSubagentNotices(item.text);
-      if (parsedAll.length === 0) return undefined;
-      return {
-        items: parsedAll.map((parsed) => ({
-          type: "plugin" as const,
-          kind: "subagent-report",
-          version: 1,
-          data: parsed,
-        })),
-      };
-    },
-  });
-
-  plugin.addTimelineRenderer({
-    kind: "subagent-report",
-    version: 1,
-    schema: z.object({
-      role: z.string(),
-      kind: z.string(),
-      agentId: z.string(),
-      name: z.string().nullable(),
-      body: z.string(),
-      tone: z.enum(["ok", "info", "warn"]),
-    }),
-    Component: SubagentNoticeCard,
-  });
-
-  // ── abort cards (v2, 2026-09-05) ─────────────────────────────────────
-  // Today's RCA: stopReason=error + "operation was aborted" = an undici
-  // AbortError from the zaicp relay dropping the stream MID-FLIGHT (daemon
-  // log turn_failed; happened ~1/hour for 2 days) — the turn really died,
-  // show a warning to tell "dead" apart from "hung". "Request aborted"/
-  // stopReason=aborted = a deliberate cancel (user STOP or daemon
-  // interrupt-and-replace on child notify) — one muted line is enough.
-  // Render-layer only; the transcript stays untouched.
-  plugin.addTimelineTransformer({
-    id: "muted-abort-transformer",
-    query: { itemType: "error" },
-    transform: ({ item }) => {
-      if (item.type !== "error") return undefined;
-      const msg: string = item.message ?? "";
-      if (!/operation was aborted/i.test(msg) && !/request aborted/i.test(msg)) return undefined;
-      const cls = /operation was aborted/i.test(msg) && /stopReason\s*=\s*error/i.test(msg)
-        ? ("relay-drop" as const)
-        : ("superseded" as const);
-      return { items: [{ type: "plugin" as const, kind: "muted-abort", version: 2, data: { message: msg, cls } }] };
-    },
-  });
-
-  plugin.addTimelineRenderer({
-    kind: "muted-abort",
-    version: 2,
-    schema: z.object({ message: z.string(), cls: z.enum(["relay-drop", "superseded"]) }),
-    Component: MutedAbortCard,
-  });
-
-  return () => {};
-}
-
-const SUBAGENT_RE =
-  /^<subagent-message from="([0-9a-f-]{36})" role="([\w-]+)" kind="([\w-]+)">\n?([\s\S]*?)\n?<\/subagent-message>$/;
-
-const SUBAGENT_BLOCK_RE =
-  /<subagent-message from="[0-9a-f-]{36}" role="[\w-]+" kind="[\w-]+">[\s\S]*?<\/subagent-message>/g;
-
-/** Split a user message into envelopes, parse each; [] = not ours. */
-function parseAllSubagentNotices(text: string): SubagentNoticeData[] {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("<subagent-message")) return [];
-  const blocks = trimmed.match(SUBAGENT_BLOCK_RE) ?? [];
-  if (blocks.length === 0) return [];
-  // every block must match the format; a partial match stays pass-through
-  const parsed = blocks.map((b) => parseSubagentNotice(b));
-  return parsed.every((p) => p !== null) ? (parsed as SubagentNoticeData[]) : [];
-}
-
-/** Parse + clean a <subagent-message> block into card data; null = not ours. */
-function parseSubagentNotice(text: string): SubagentNoticeData | null {
-  const m = SUBAGENT_RE.exec(text.trim());
-  if (!m) return null;
-  const [, agentId, role, kindTag, rawBody] = m;
-  let body = rawBody.trim();
-  let tone: SubagentNoticeData["tone"] = "info";
-  let label = kindTag;
-  const tag = /^\[([a-z][a-z-]*)\]\s*/i.exec(body);
-  if (tag) {
-    label = tag[1].toLowerCase();
-    body = body.slice(tag[0].length);
-    if (label === "auto-report") tone = "ok";
-    else if (label === "channel-nack") tone = "warn";
-  }
-  let name: string | null = null;
-  const nm = /Subagent [\w-]+ "([^"]+)" \(([0-9a-f-]{36})\)/.exec(body);
-  if (nm) {
-    name = nm[1];
-    body = body.replace(` "${nm[1]}" (${nm[2]})`, ` "${nm[1]}"`); // drop the duplicated UUID in the body
-  }
-  return { role, kind: label, agentId, name, body, tone };
 }

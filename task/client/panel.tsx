@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Pressable, Text, View, ScrollView } from "react-native";
-import type { PluginWorkspacePanelProps } from "@getpaseo/plugin";
-import { useRpc } from "@getpaseo/plugin";
-import { GetTaskStateRpc, SetTaskControlRpc, type TaskPanelState } from "./rpc.js";
+import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
+import { useRpc } from "@getpaseo/plugin/client";
+import { GetTaskStateRpc, SetTaskControlRpc, type TaskPanelState } from "../shared/rpc.js";
 import { OmCard, OmHeader, OmSection, OmSessionPicker, omTimeAgo, omViaSuffix } from "./ui.js";
 
 const POLL_MS = 2000;

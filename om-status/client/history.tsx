@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Text, View } from "react-native";
-import { useAgent, useRpc, type PluginTimelineItemProps } from "@getpaseo/plugin";
-import { GetOmStatusRpc, type OmStatusState } from "./rpc.js";
+import { useAgent, useRpc, type PluginTimelineItemProps } from "@getpaseo/plugin/client";
+import { GetOmStatusRpc, type OmStatusState } from "../shared/rpc.js";
 
 const POLL_MS = 10_000;
 

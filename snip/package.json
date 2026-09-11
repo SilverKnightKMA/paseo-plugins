@@ -1,12 +1,12 @@
 {
   "name": "snip",
   "private": true,
-  "version": "1.0.28",
+  "version": "1.0.34",
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@getpaseo/plugin": "0.7.2",
+    "@getpaseo/plugin": "0.8.0",
     "@types/node": "^26.4.1",
     "@types/react": "~19.2.0",
     "react": "19.1.0",

@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Text, View, ScrollView } from "react-native";
-import type { PluginWorkspacePanelProps } from "@getpaseo/plugin";
-import { useRpc } from "@getpaseo/plugin";
-import { GetOmStatusRpc } from "./rpc.js";
+import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
+import { useRpc } from "@getpaseo/plugin/client";
+import { GetOmStatusRpc } from "../shared/rpc.js";
 import { OmCard, OmHeader, OmSection, OmSessionPicker, omChipLabel, omViaSuffix } from "./ui.js";
 
 const POLL_MS = 2000;

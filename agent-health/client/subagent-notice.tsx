@@ -1,5 +1,5 @@
 import { Text, View } from "react-native";
-import type { PluginTimelineItemProps } from "@getpaseo/plugin";
+import type { PluginTimelineItemProps } from "@getpaseo/plugin/client";
 
 export type SubagentNoticeData = {
   role: string;

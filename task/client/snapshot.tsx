@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import type { PluginTimelineItemProps } from "@getpaseo/plugin";
+import type { PluginTimelineItemProps } from "@getpaseo/plugin/client";
 
 export type TaskStatus = "pending" | "in_progress" | "completed" | "cancelled" | "parked";
 

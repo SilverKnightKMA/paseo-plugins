@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { PluginContext } from "@getpaseo/plugin";
-import { GetOmStateRpc, type SessionBrief, type SessionDetail } from "./rpc.js";
+import type { RpcInput } from "@getpaseo/plugin";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
+import { GetOmStateRpc, type SessionBrief, type SessionDetail } from "../shared/rpc.js";
 import { mergeLiveTitles, titleFor } from "./titles.js";
-import { OmPanel } from "./panel.client.js";
 
 type AgentLike = {
   id?: string;
@@ -100,8 +100,7 @@ function listSessions(memoryDir: string, indexLines: number): { briefs: SessionB
   return { briefs, byId };
 }
 
-export default function contribute(plugin: PluginContext) {
-  plugin.handle(GetOmStateRpc, async (input, context) => {
+export async function omStateHandler(input: RpcInput<typeof GetOmStateRpc>, context: PluginHandlerContext) {
     try {
       const handle = context.paseo.workspaces.ref(input.workspaceId);
       let ws = handle.current();
@@ -182,26 +181,4 @@ export default function contribute(plugin: PluginContext) {
     } catch (err) {
       return { present: false, workspace: null, sessions: [], note: `scan failed: ${String(err)}`, generatedAt: new Date().toISOString() };
     }
-  });
-
-  plugin.addWorkspacePanel({
-    id: "om-panel",
-    title: "OM Topics",
-    icon: "Brain",
-    context: "workspace",
-    Component: OmPanel,
-  });
-
-  plugin.addCommandCenterItem({
-    id: "om-panel-open",
-    title: "OM Topics: topics theo session",
-    icon: "Brain",
-    keywords: ["memory", "om", "observational", "topics", "session"],
-    context: "workspace",
-    onSelect(context_) {
-      context_.openPanel("om-panel");
-    },
-  });
-
-  return () => {};
 }

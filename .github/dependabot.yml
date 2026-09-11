@@ -1,7 +1,7 @@
 # Dependency auto-upgrade for paseo-plugins.
 # devDependencies only — runtime deps are zero (plugins import
 # @getpaseo/plugin + node:* builtins; the daemon resolves those at runtime).
-# @getpaseo/plugin is PINNED to the daemon version (0.7.2): bumping types
+# @getpaseo/plugin is PINNED to the daemon version (0.8.0): bumping types
 # ahead of the runtime daemon would be type-drift, so it is ignored here.
 # PRs are auto-merged by auto-merge.yml once the tsc CI gate is green.
 version: 2
@@ -16,7 +16,7 @@ updates:
     labels: [automated, dependencies]
     ignore:
       - dependency-name: "@getpaseo/plugin"
-      # react/react-native are pinned to the @getpaseo/plugin@0.7.2 peer set
+      # react/react-native are pinned to the @getpaseo/plugin@0.8.0 peer set
       # (react 19.1.0 / react-native 0.81.5). react-native 0.87+ peer-requires
       # react >=19.2.3, which conflicts with the SDK peer — unresolvable until
       # the daemon ships a newer SDK, so stop proposing these bumps.
@@ -36,7 +36,7 @@ updates:
     labels: [automated, dependencies]
     ignore:
       - dependency-name: "@getpaseo/plugin"
-      # react/react-native are pinned to the @getpaseo/plugin@0.7.2 peer set
+      # react/react-native are pinned to the @getpaseo/plugin@0.8.0 peer set
       # (react 19.1.0 / react-native 0.81.5). react-native 0.87+ peer-requires
       # react >=19.2.3, which conflicts with the SDK peer — unresolvable until
       # the daemon ships a newer SDK, so stop proposing these bumps.
@@ -56,7 +56,7 @@ updates:
     labels: [automated, dependencies]
     ignore:
       - dependency-name: "@getpaseo/plugin"
-      # react/react-native are pinned to the @getpaseo/plugin@0.7.2 peer set
+      # react/react-native are pinned to the @getpaseo/plugin@0.8.0 peer set
       # (react 19.1.0 / react-native 0.81.5). react-native 0.87+ peer-requires
       # react >=19.2.3, which conflicts with the SDK peer — unresolvable until
       # the daemon ships a newer SDK, so stop proposing these bumps.
