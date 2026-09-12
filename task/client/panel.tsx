@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Pressable, Text, View, ScrollView } from "react-native";
+import { Pressable, Text, View, ScrollView, TextInput } from "react-native";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import { useRpc } from "@getpaseo/plugin/client";
 import { GetTaskStateRpc, SetTaskControlRpc, type TaskPanelState } from "../shared/rpc.js";
@@ -20,6 +20,9 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
   const [picked, setPicked] = useState<string | null>(null); // chips override
   const [hideDone, setHideDone] = useState(true); // v1.0.32: hide completed by default (user request)
   const [compact, setCompact] = useState(false); // v1.0.32: collapse descriptions to one-line rows
+  // v1.0.35: amend editor — task id đang mở ô nhập đề mới (user-only)
+  const [amendFor, setAmendFor] = useState<number | null>(null);
+  const [amendText, setAmendText] = useState("");
 
   const refresh = useCallback(async () => {
     try {
@@ -54,13 +57,14 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
     parked: { glyph: "⏸", color: c.statusWarning },
   };
 
-  /** User-only control actions (v1.0.31): fire the control file + refresh. */
+  /** User-only control actions (v1.0.31): fire the control file + refresh.
+   *  v1.0.35: action "amend" gửi đề mới do user soạn (descHistory by user). */
   const sendControl = useCallback(
-    async (id: number, action: "unpark" | "strict" | "reopen", value?: boolean) => {
+    async (id: number, action: "unpark" | "strict" | "reopen" | "amend", value?: boolean, description?: string) => {
       const sid = data?.sessionId;
       if (!sid) return;
       try {
-        await write({ workspaceId: props.workspaceId, sessionId: sid, id, action, value });
+        await write({ workspaceId: props.workspaceId, sessionId: sid, id, action, value, description });
       } catch {
         // engine offline → file sits unacked; next poll still shows old state
       }
@@ -102,6 +106,22 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
           <Text style={{ color: c.statusWarning, fontSize: 11, paddingLeft: 20 }}>
             parked (chờ user): {t.appealReason ?? "—"}
           </Text>
+        ) : null}
+        {/* v1.0.35 doneCheck guard: agent từng đổi tờ đề — cảnh báo cố định + trail cũ→mới
+            (judge cũng thấy trail này; model không đổi kín được nữa) */}
+        {t.descAmendments && t.descAmendments > 0 ? (
+          <Text style={{ color: c.statusWarning, fontSize: 11, paddingLeft: 20 }}>
+            🔨 đề đã bị model sửa {t.descAmendments}/2 lần — tờ cũ vẫn được giữ
+          </Text>
+        ) : null}
+        {t.descHistory && t.descHistory.length > 0 && !compact ? (
+          <View style={{ paddingLeft: 20, gap: 1, marginTop: 1 }}>
+            {t.descHistory.map((d, i) => (
+              <Text key={i} style={{ color: d.by === "user" ? c.accent : c.statusWarning, fontSize: 10, opacity: 0.9 }}>
+                {d.by === "user" ? "✎ user đổi:" : "🔨 agent đổi:"} {d.from || "(trống)"} → {d.to || "(trống)"}
+              </Text>
+            ))}
+          </View>
         ) : null}
         {/* user-only row actions: un-park a parked task; STRICT toggle for
             any verify task (raise/lower — model can only raise, v1.4.28);
@@ -154,7 +174,69 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
               </Text>
             </Pressable>
           ) : null}
+          {/* v1.0.35: sửa đề (user) — cửa duy nhất khi agent hết cap 2/2 hoặc task strict */}
+          <Pressable
+            onPress={() => {
+              setAmendFor(amendFor === t.id ? null : t.id);
+              setAmendText("");
+            }}
+            style={{
+              backgroundColor: "transparent",
+              borderColor: c.foregroundMuted,
+              borderWidth: 1,
+              borderRadius: 8,
+              paddingHorizontal: 8,
+              paddingVertical: 2,
+            }}
+          >
+            <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>✎ sửa đề (user)</Text>
+          </Pressable>
         </View>
+        {amendFor === t.id ? (
+          <View style={{ paddingLeft: 20, marginTop: 4, gap: 4 }}>
+            <TextInput
+              value={amendText}
+              onChangeText={setAmendText}
+              placeholder="đề mới (doneCheck) — user soạn, engine giữ tờ cũ"
+              placeholderTextColor={c.foregroundMuted}
+              multiline
+              style={{
+                color: c.foreground,
+                backgroundColor: c.surface1,
+                borderColor: c.foregroundMuted,
+                borderWidth: 1,
+                borderRadius: 8,
+                padding: 6,
+                fontSize: 11,
+                minHeight: 44,
+                textAlignVertical: "top",
+              }}
+            />
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              <Pressable
+                onPress={() => {
+                  const text = amendText.trim();
+                  if (!text) return;
+                  setAmendFor(null);
+                  setAmendText("");
+                  void sendControl(t.id, "amend", undefined, text);
+                }}
+                style={{ backgroundColor: c.surface1, borderColor: c.accent, borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}
+              >
+                <Text style={{ color: c.accent, fontSize: 11 }}>gửi đề mới</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  setAmendFor(null);
+                  setAmendText("");
+                }}
+                style={{ backgroundColor: "transparent", borderColor: c.foregroundMuted, borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}
+              >
+                <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>hủy</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
         {t.judgeRounds && t.judgeRounds > 0 && !compact ? (
           <Text style={{ color: c.foregroundMuted, fontSize: 11, paddingLeft: 20 }}>
             judge rounds: {t.judgeRounds}

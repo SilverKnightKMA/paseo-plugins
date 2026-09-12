@@ -91,6 +91,8 @@ async function readProjection(sessionId: string): Promise<TaskPanelState | null>
         appealReason?: string;
         verify?: { lane?: unknown; strict?: unknown; probes?: unknown[] };
         audit?: { verdict?: unknown; summary?: unknown };
+        descAmendments?: number;
+        descHistory?: Array<{ at?: unknown; by?: unknown; from?: unknown; to?: unknown }>;
       }>;
     };
     if (parsed.v !== 1) return null; // unknown projection version — refuse to render
@@ -122,6 +124,17 @@ async function readProjection(sessionId: string): Promise<TaskPanelState | null>
         t.audit && typeof t.audit === "object" && typeof (t.audit as { verdict?: unknown }).verdict === "string"
           ? { verdict: (t.audit as { verdict: string }).verdict, summary: String((t.audit as { summary?: unknown }).summary ?? "") }
           : undefined,
+      descAmendments: typeof t.descAmendments === "number" ? t.descAmendments : undefined,
+      descHistory: Array.isArray(t.descHistory)
+        ? t.descHistory
+            .filter(
+              (d): d is { at: number; by: "agent" | "user"; from: string; to: string } =>
+                (d.by === "agent" || d.by === "user") &&
+                typeof d.from === "string" &&
+                typeof d.to === "string",
+            )
+            .map((d) => ({ at: typeof d.at === "number" ? d.at : 0, by: d.by, from: d.from.slice(0, 400), to: d.to.slice(0, 400) }))
+        : undefined,
     }));
     return {
       present: true,
@@ -257,6 +270,8 @@ export async function writeTaskControl(
     action: input.action,
     id: input.id,
     ...(input.action === "strict" ? { value: input.value ?? true } : {}),
+    // v1.0.35: đề mới do USER soạn — engine ghi trail by user, không tốn ngân sách agent
+    ...(input.action === "amend" ? { description: (input.description ?? "").trim().slice(0, 2000) } : {}),
     sentAt,
   };
   const tmp = `${file}.tmp-${process.pid}`;
