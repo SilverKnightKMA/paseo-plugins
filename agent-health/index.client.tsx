@@ -2,6 +2,7 @@ import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { z } from "zod";
 import { HealthPanel } from "./client/panel.js";
 import { SubagentNoticeCard, type SubagentNoticeData } from "./client/subagent-notice.js";
+import { MachineNoticeCard } from "./client/machine-notice.js";
 import { MutedAbortCard } from "./client/muted-abort.js";
 import { startZwLive } from "./client/zw-pill.js";
 
@@ -39,15 +40,30 @@ export default function contribute(client: PluginClientContext) {
       if (item.type !== "user_message") return undefined;
       // one user message may contain multiple envelopes (drain joins with "\n\n")
       const parsedAll = parseAllSubagentNotices(item.text);
-      if (parsedAll.length === 0) return undefined;
-      return {
-        items: parsedAll.map((parsed) => ({
-          type: "plugin" as const,
-          kind: "subagent-report",
-          version: 1,
-          data: parsed,
-        })),
-      };
+      if (parsedAll.length > 0) {
+        return {
+          items: parsedAll.map((parsed) => ({
+            type: "plugin" as const,
+            kind: "subagent-report",
+            version: 1,
+            data: parsed,
+          })),
+        };
+      }
+      // #52: pool notices ride the same user-message path under the
+      // <machine-notice> envelope — restyle as a card, model payload intact.
+      const machines = parseAllMachineNotices(item.text);
+      if (machines.length > 0) {
+        return {
+          items: machines.map((m) => ({
+            type: "plugin" as const,
+            kind: "machine-notice",
+            version: 1,
+            data: m,
+          })),
+        };
+      }
+      return undefined;
     },
   });
 
@@ -63,6 +79,13 @@ export default function contribute(client: PluginClientContext) {
       tone: z.enum(["ok", "info", "warn"]),
     }),
     Component: SubagentNoticeCard,
+  });
+
+  client.addTimelineRenderer({
+    kind: "machine-notice",
+    version: 1,
+    schema: z.object({ kind: z.string(), body: z.string() }),
+    Component: MachineNoticeCard,
   });
 
   // ── abort cards (v2, 2026-09-05) ─────────────────────────────────────
@@ -104,6 +127,29 @@ const SUBAGENT_RE =
 
 const SUBAGENT_BLOCK_RE =
   /<subagent-message from="[0-9a-f-]{36}" role="[\w-]+" kind="[\w-]+">[\s\S]*?<\/subagent-message>/g;
+const MACHINE_NOTICE_BLOCK_RE = /<machine-notice kind="[\w-]+">\n?[\s\S]*?\n?<\/machine-notice>/g;
+
+export type MachineNoticeParsed = { kind: string; body: string };
+
+/** Split a user message into <machine-notice> envelopes; [] = not ours.
+ *  Same all-or-nothing rule as subagent notices: a partial match (e.g. the
+ *  pending-followUp tray gluing extra user text after the envelope) stays
+ *  pass-through rather than half-rendering. MARKERS.md marker 5. */
+function parseAllMachineNotices(text: string): MachineNoticeParsed[] {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("<machine-notice")) return [];
+  const blocks = trimmed.match(MACHINE_NOTICE_BLOCK_RE) ?? [];
+  if (blocks.length === 0) return [];
+  const parsed: MachineNoticeParsed[] = [];
+  for (const b of blocks) {
+    const m = /^<machine-notice kind="([\w-]+)">\n?([\s\S]*?)\n?<\/machine-notice>$/.exec(b.trim());
+    if (!m) return []; // any malformed block -> not ours, show raw
+    parsed.push({ kind: m[1], body: m[2].trim() });
+  }
+  return parsed;
+}
+
+
 
 /** Split a user message into envelopes, parse each; [] = not ours. */
 function parseAllSubagentNotices(text: string): SubagentNoticeData[] {
