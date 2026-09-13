@@ -11,6 +11,10 @@ export type TaskSnapshotData = {
    *  present the card shows ONLY the diff plus a collapsed full-snapshot
    *  expander (user request: cards were too long). Absent on task_list. */
   changes?: { id: number; subject: string; from: TaskStatus | null; to: TaskStatus }[];
+  /** v1.0.37 (#45, engine v1.4.46): field-level diff of the affected task —
+   *  "pending => pending" said nothing about WHAT changed; these lines are
+   *  the WHAT (subject/doneCheck/blockedBy/verify/…, ~80 chars, max 6). */
+  fields?: { field: string; from?: string | null; to: string }[];
 };
 
 const marker = {
@@ -92,6 +96,26 @@ export function TaskSnapshotCard(props: PluginTimelineItemProps<TaskSnapshotData
               </Text>
             </View>
           ))}
+
+      {/* #45: WHAT changed per field — muted monospace; doneCheck rewrites
+          (model-side amendments) highlight warning like the panel trail. */}
+      {hasDiff && d.fields && d.fields.length > 0 ? (
+        <View style={{ gap: 1, paddingLeft: 22 }}>
+          {d.fields.map((f, i) => (
+            <Text
+              key={i}
+              style={{
+                color: f.field.startsWith("doneCheck") ? c.statusWarning : c.foregroundMuted,
+                fontFamily: "monospace",
+                fontSize: 10,
+                opacity: 0.9,
+              }}
+            >
+              {`${f.field}: ${f.from ? `${f.from} → ` : ""}${f.to}`}
+            </Text>
+          ))}
+        </View>
+      ) : null}
 
       {hasDiff ? (
         <Pressable onPress={() => setExpanded((v) => !v)} style={{ alignSelf: "flex-start", paddingVertical: 2 }}>

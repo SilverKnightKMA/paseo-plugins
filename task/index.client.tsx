@@ -56,6 +56,16 @@ export default function contribute(client: PluginClientContext) {
     }),
   );
 
+  // v1.0.37 (#45): field-level diff lines for the affected task (absent on
+  // older engine builds — card renders exactly as before).
+  const snapshotFieldsSchema = z.array(
+    z.object({
+      field: z.string(),
+      from: z.string().nullable().optional(),
+      to: z.string(),
+    }),
+  );
+
   client.addTimelineTransformer({
     id: "task-snapshot-transformer",
     query: { itemType: "tool_call" },
@@ -70,6 +80,7 @@ export default function contribute(client: PluginClientContext) {
       const tasks = snapshotTasksSchema.safeParse(Reflect.get(details as Record<string, unknown>, "tasks"));
       if (!tasks.success || tasks.data.length === 0) return undefined;
       const changesParsed = snapshotChangesSchema.safeParse(Reflect.get(details as Record<string, unknown>, "changes"));
+      const fieldsParsed = snapshotFieldsSchema.safeParse(Reflect.get(details as Record<string, unknown>, "fields"));
       return {
         items: [
           {
@@ -80,6 +91,7 @@ export default function contribute(client: PluginClientContext) {
               tool: it.name as "task_create" | "task_update" | "task_list",
               tasks: tasks.data,
               ...(changesParsed.success && changesParsed.data.length > 0 ? { changes: changesParsed.data } : {}),
+              ...(fieldsParsed.success && fieldsParsed.data.length > 0 ? { fields: fieldsParsed.data } : {}),
             },
           },
         ],
@@ -94,6 +106,7 @@ export default function contribute(client: PluginClientContext) {
       tool: z.enum(["task_create", "task_update", "task_list"]),
       tasks: snapshotTasksSchema,
       changes: snapshotChangesSchema.optional(),
+      fields: snapshotFieldsSchema.optional(),
     }),
     Component: TaskSnapshotCard,
   });
