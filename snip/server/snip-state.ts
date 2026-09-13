@@ -186,7 +186,13 @@ export async function readSnipState(
         const sid = f.replace(/\.json$/, "");
         const cf = await readControlFile(sid);
         // cwd unknown (pre-v1.4.9 file) → only keep if it is the resolved session
-        if (cf?.cwd && rootDir ? cf.cwd === rootDir || cf.cwd.startsWith(`${rootDir}/`) : sid === resolved?.sessionId) {
+        const cwdMatches = !!(cf?.cwd && rootDir && (cf.cwd === rootDir || cf.cwd.startsWith(`${rootDir}/`)));
+        // #53: the engine registers a control file for EVERY session ever started,
+        // so bare-registration residue (dead sessions that never used snip) must
+        // not become picker chips — only files that still CARRY config (active
+        // snippets) or belong to the resolved session stay listed.
+        const carriesConfig = !!(cf && Array.isArray(cf.active) && cf.active.length > 0);
+        if (cwdMatches && (carriesConfig || sid === resolved?.sessionId)) {
           engineSessions.add(sid);
         }
       }
