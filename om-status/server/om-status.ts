@@ -5,6 +5,7 @@ import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { GetOmStatusRpc, OmEventSchema, OmSummarySchema, type OmStatusState } from "../shared/rpc.js";
 import { mergeLiveTitles, titleFor } from "./titles.js";
+import { isHiddenSession, visibleOm, type FilterAgentLike } from "./session-filter.js";
 
 const OmStatusFileSchema = z.object({
   schema: z.literal(1),
@@ -43,18 +44,7 @@ type AgentLike = {
   runtimeInfo?: { sessionId?: string | null } | null;
 };
 
-/** Workers (OM observer/consolidator, researchers…) carry subagent labels —
- *  they never run OM in their own session, so they must not be picked as the
- *  workspace representative (v1.0.27: fixes "OM not running" while a worker ran). */
-function isSubagentAgent(a: AgentLike): boolean {
-  const labels = a.labels;
-  if (!labels) return false;
-  return Boolean(labels["subagent.role"] ?? labels["subagent.parent"] ?? labels["paseo.parent-agent-id"]);
-}
-
-function isMainChat(a: AgentLike): boolean {
-  return a.archivedAt == null && !isSubagentAgent(a);
-}
+// session visibility lives in ./session-filter.js (shared, pinned by check-shared-ui.py)
 
 /** Wire entries are wrappers: { agent: <snapshot> }. Unwrap defensively. */
 function unwrapAgents(entries: unknown[]): AgentLike[] {
@@ -111,7 +101,7 @@ export async function readOmStatus(
       const inWs = agents.filter((a) => a.workspaceId === input.workspaceId);
       // v1.0.27: prefer MAIN chats only — running workers (observer/researcher)
       // used to win the "running" pool and flip the panel to a session with no OM.
-      const mainPool = inWs.filter(isMainChat);
+      const mainPool = inWs.filter((a: FilterAgentLike) => !isHiddenSession(a));
       const pool0 = mainPool.length > 0 ? mainPool : inWs;
       const running = pool0.filter((a) => a.status === "running");
       const pool = running.length > 0 ? running : pool0;
@@ -135,18 +125,20 @@ export async function readOmStatus(
     // v1.0.29: chips list only sessions the daemon still knows — main-chat
     // agents of THIS workspace. Dead chats (agent killed/archived) drop off,
     // mirroring the task panel's scoping doctrine. No metadata → no filter.
-    const knownMains = new Set(
-      agents
-        .filter((a) => a.workspaceId === input.workspaceId && isMainChat(a))
-        .map((a) => a.runtimeInfo?.sessionId ?? null)
-        .filter((s): s is string => Boolean(s)),
+    // v1.0.31: OM pair visibility — shared visibleOm (om-panel uses the SAME
+    // function on the same inputs; check-shared-ui.py pins the copies). Hidden =
+    // archived / internal / subagent; disk-only sessions (no agent record) drop too.
+    const visibleIds = new Set(
+      visibleOm(agents, (a: FilterAgentLike) => a.workspaceId === input.workspaceId, new Set(sessionDirs)).map(
+        (v) => v.sessionId,
+      ),
     );
     // title cache: keeps names for dead sessions (agent process gone) — the live
     // map beats the cache; both plugins write the same ~/.paseo/plugin-data/ file
     const titleCache = mergeLiveTitles(titleBySession);
     const sessions: { sessionId: string; ageSec: number; title: string | null; topicFiles: number; active: boolean }[] = [];
     for (const sessionId of sessionDirs) {
-      if (knownMains.size > 0 && !knownMains.has(sessionId)) continue; // v1.0.29: daemon-known main chats only
+      if (agents.length > 0 && !visibleIds.has(sessionId)) continue; // v1.0.31: shared visibleOm filter (agents unknown => degraded show-all)
       try {
         const mtime = (await stat(path.join(memoryDir, sessionId, "om-status.json"))).mtimeMs;
         // topic count mirrors om-panel listSessions: *.md minus INDEX.md

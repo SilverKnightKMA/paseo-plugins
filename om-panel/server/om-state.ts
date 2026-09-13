@@ -4,6 +4,7 @@ import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { GetOmStateRpc, type SessionBrief, type SessionDetail } from "../shared/rpc.js";
 import { mergeLiveTitles, titleFor } from "./titles.js";
+import { visibleOm, type FilterAgentLike } from "./session-filter.js";
 
 type AgentLike = {
   id?: string;
@@ -24,16 +25,6 @@ function unwrapAgents(entries: unknown[]): AgentLike[] {
     if (inner && typeof inner === "object") out.push(inner as AgentLike);
   }
   return out;
-}
-
-function isSubagentAgent(a: AgentLike): boolean {
-  const labels = a.labels;
-  if (!labels) return false;
-  return Boolean(labels["subagent.role"] ?? labels["subagent.parent"] ?? labels["paseo.parent-agent-id"]);
-}
-
-function isMainChat(a: AgentLike): boolean {
-  return a.archivedAt == null && !isSubagentAgent(a);
 }
 
 async function activeAgentOfWorkspace(agents: AgentLike[], workspaceId: string): Promise<AgentLike | null> {
@@ -124,13 +115,15 @@ export async function omStateHandler(input: RpcInput<typeof GetOmStateRpc>, cont
       // agents of THIS workspace. Dead chats (agent killed/archived) drop off,
       // mirroring the task panel's scoping doctrine. Display-scope only: an
       // explicit pick still renders even when its chip is filtered out.
-      const knownMains = new Set(
-        agents
-          .filter((a) => a.workspaceId === input.workspaceId && isMainChat(a))
-          .map((a) => a.runtimeInfo?.sessionId ?? null)
-          .filter((s): s is string => Boolean(s)),
+      // v1.0.31: OM pair visibility — shared visibleOm (om-status uses the SAME
+      // function on the same inputs; check-shared-ui.py pins the copies). Hidden =
+      // archived / internal / subagent; disk-only sessions (no agent record) drop too.
+      const visibleIds = new Set(
+        visibleOm(agents, (a: FilterAgentLike) => a.workspaceId === input.workspaceId, new Set(briefs.map((b) => b.sessionId))).map(
+          (v) => v.sessionId,
+        ),
       );
-      const visible = agents.length > 0 ? briefs.filter((b) => knownMains.has(b.sessionId)) : briefs;
+      const visible = agents.length > 0 ? briefs.filter((b) => visibleIds.has(b.sessionId)) : briefs;
 
       // titles: live from agents + cache for sessions whose agent is gone (shares the
       // cache file with om-status — source of truth is the Paseo agent title)

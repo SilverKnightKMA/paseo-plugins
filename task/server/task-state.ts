@@ -5,6 +5,7 @@ import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { GetTaskStateRpc, SetTaskControlRpc, type TaskPanelState } from "../shared/rpc.js";
 import { mergeLiveTitles, titleFor } from "./titles.js";
+import { isHiddenSession, type FilterAgentLike } from "./session-filter.js";
 
 const EMPTY: TaskPanelState = {
   present: false,
@@ -35,18 +36,7 @@ type AgentLike = {
   runtimeInfo?: { sessionId?: string | null } | null;
 };
 
-/** Subagent agents are labeled by the daemon/spawner (verified live
- *  2026-09-05): subagent.role, subagent.parent and/or paseo.parent-agent-id;
- *  main chats carry an empty labels object. */
-function isSubagentAgent(a: AgentLike): boolean {
-  const labels = a.labels;
-  if (!labels) return false;
-  return Boolean(labels["subagent.role"] ?? labels["subagent.parent"] ?? labels["paseo.parent-agent-id"]);
-}
-
-function isMainChat(a: AgentLike): boolean {
-  return a.archivedAt == null && !isSubagentAgent(a);
-}
+// session visibility lives in ./session-filter.js (shared, pinned by check-shared-ui.py)
 
 function unwrapAgents(entries: unknown[]): AgentLike[] {
   const out: AgentLike[] = [];
@@ -205,7 +195,7 @@ export async function readTaskState(
       const sessionId = agent?.runtimeInfo?.sessionId ?? null;
       if (sessionId) resolved = { agentId: input.agentId, agentTitle: agent?.title ?? null, sessionId, via: "agent" };
     } else {
-      const mains = agents.filter((a) => inWsAgent(a) && isMainChat(a));
+      const mains = agents.filter((a: AgentLike) => inWsAgent(a) && !isHiddenSession(a));
       const running = mains.filter((a) => a.status === "running");
       const pool = running.length > 0 ? running : mains;
       const ts = (a: AgentLike) => Math.max(Date.parse(a.lastUserMessageAt ?? "") || 0, Date.parse(a.updatedAt ?? "") || 0);
@@ -221,7 +211,7 @@ export async function readTaskState(
     const titleCache = mergeLiveTitles(titleBySession);
     const sessions: TaskPanelState["sessions"] = [];
     for (const a of agents) {
-      if (!inWsAgent(a) || !isMainChat(a)) continue;
+      if (!inWsAgent(a) || isHiddenSession(a)) continue;
       const sid = a.runtimeInfo?.sessionId;
       if (!sid || !withFiles.has(sid)) continue;
       sessions.push({

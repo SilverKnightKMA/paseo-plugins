@@ -6,6 +6,7 @@ import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { GetSnipStateRpc, SetSnipStateRpc, SnippetBriefSchema, type SnipState } from "../shared/rpc.js";
 import { mergeLiveTitles, titleFor } from "./titles.js";
+import { isHiddenSession } from "./session-filter.js";
 
 const EMPTY: SnipState = {
   present: false,
@@ -45,19 +46,7 @@ type AgentLike = {
   runtimeInfo?: { sessionId?: string | null } | null;
 };
 
-/** Subagent agents are labeled by the daemon/spawner (verified live
- * 2026-09-05): subagent.role, subagent.parent and/or paseo.parent-agent-id;
- * main chats carry an empty labels object. */
-function isSubagentAgent(a: AgentLike): boolean {
-  const labels = a.labels;
-  if (!labels) return false;
-  return Boolean(labels["subagent.role"] ?? labels["subagent.parent"] ?? labels["paseo.parent-agent-id"]);
-}
-
-/** Main chat of the workspace: not archived, not a spawned subagent. */
-function isMainChat(a: AgentLike): boolean {
-  return a.archivedAt == null && !isSubagentAgent(a);
-}
+// session visibility lives in ./session-filter.js (shared, pinned by check-shared-ui.py)
 
 /** Wire entries are wrappers: { agent: <snapshot> }. Unwrap defensively. */
 function unwrapAgents(entries: unknown[]): AgentLike[] {
@@ -174,7 +163,7 @@ export async function readSnipState(
     } else {
       // main chats only — subagents share the workspace and often run, but the
       // picker (and thus auto-resolution) must land on a main chat session
-      const mains = agents.filter((a) => inWsAgent(a) && isMainChat(a));
+      const mains = agents.filter((a: AgentLike) => inWsAgent(a) && !isHiddenSession(a));
       const running = mains.filter((a) => a.status === "running");
       const pool = running.length > 0 ? running : mains;
       const ts = (a: AgentLike) => Math.max(Date.parse(a.lastUserMessageAt ?? "") || 0, Date.parse(a.updatedAt ?? "") || 0);
@@ -205,7 +194,7 @@ export async function readSnipState(
       // no control dir yet — engine v1.5 never ran
     }
     for (const a of agents) {
-      if (!inWsAgent(a) || !isMainChat(a)) continue;
+      if (!inWsAgent(a) || isHiddenSession(a)) continue;
       const sid = a.runtimeInfo?.sessionId;
       if (sid) engineSessions.add(sid);
     }
