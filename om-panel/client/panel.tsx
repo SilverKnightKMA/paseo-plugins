@@ -1,11 +1,12 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { Text, View, ScrollView } from "react-native";
 import { useRpc } from "@getpaseo/plugin/client";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import { GetOmStateRpc, type OmPanelState } from "../shared/rpc.js";
 import { OmCard, OmHeader, OmSection, OmSessionPicker, omChipLabel, omTimeAgo, omViaSuffix } from "./ui.js";
+import { useLiveRpc } from "./use-live.js";
 
-const POLL_MS = 30_000;
+const BACKSTOP_MS = 15_000; // push-driven refresh; backstop catches new agents + dropped events
 
 /**
  * v2: session-first. The header pins the tracked session (active marker +
@@ -28,11 +29,7 @@ export function OmPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
     }
   }, [getState, workspaceId, picked]);
 
-  useEffect(() => {
-    void load();
-    const timer = setInterval(() => void load(), POLL_MS);
-    return () => clearInterval(timer);
-  }, [load]);
+  useLiveRpc(load, BACKSTOP_MS);
 
   const c = theme.colors;
   const sel = data?.session;
@@ -47,7 +44,7 @@ export function OmPanel({ theme, workspaceId }: PluginWorkspacePanelProps) {
           ...(resolved?.agentTitle ? [`agent: ${resolved.agentTitle}`] : []),
           ...(sel ? [`${sel.topicFiles} topics · ${sel.totalKb} KB`] : [data?.note ?? "…"]),
           ...(data
-            ? [`live · updated ${sel ? omTimeAgo(sel.lastModified) : "?"} · poll ${POLL_MS / 1000}s`]
+            ? [`live · updated ${sel ? omTimeAgo(sel.lastModified) : "?"} · live-push + ${BACKSTOP_MS / 1000}s backstop`]
             : []),
         ]}
       />

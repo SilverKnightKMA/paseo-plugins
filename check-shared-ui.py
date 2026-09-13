@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parent
 FILES = [ROOT / "om-status" / "client" / "ui.tsx", ROOT / "om-panel" / "client" / "ui.tsx", ROOT / "snip" / "client" / "ui.tsx", ROOT / "task" / "client" / "ui.tsx"]
 TITLE_FILES = [ROOT / "om-status" / "server" / "titles.ts", ROOT / "om-panel" / "server" / "titles.ts", ROOT / "snip" / "server" / "titles.ts", ROOT / "task" / "server" / "titles.ts"]
 FILTER_FILES = [ROOT / "om-status" / "server" / "session-filter.ts", ROOT / "om-panel" / "server" / "session-filter.ts", ROOT / "snip" / "server" / "session-filter.ts", ROOT / "task" / "server" / "session-filter.ts"]
+LIVE_FILES = [ROOT / "om-status" / "client" / "use-live.ts", ROOT / "om-panel" / "client" / "use-live.ts", ROOT / "snip" / "client" / "use-live.ts", ROOT / "task" / "client" / "use-live.ts"]
 
 
 def digest(p: Path) -> str:
@@ -22,7 +23,7 @@ def digest(p: Path) -> str:
 
 
 def main() -> int:
-    for label, files in (("ui.tsx", FILES), ("titles.ts", TITLE_FILES), ("session-filter.ts", FILTER_FILES)):
+    for label, files in (("ui.tsx", FILES), ("titles.ts", TITLE_FILES), ("session-filter.ts", FILTER_FILES), ("use-live.ts", LIVE_FILES)):
         if not all(p.exists() for p in files):
             print(f"FAIL: {label} missing —", [str(p) for p in files if not p.exists()])
             return 1

@@ -1,11 +1,12 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import { useRpc } from "@getpaseo/plugin/client";
 import { GetSnipStateRpc, SetSnipStateRpc, type SnipState } from "../shared/rpc.js";
 import { OmCard, OmHeader, OmSection, OmSessionPicker, omTimeAgo, omViaSuffix } from "./ui.js";
+import { useLiveRpc } from "./use-live.js";
 
-const POLL_MS = 2000;
+const BACKSTOP_MS = 15_000; // push-driven refresh; backstop catches new agents + dropped events
 
 /**
  * Snip panel: mouse-driven snippet selection. Every toggle applies
@@ -28,11 +29,7 @@ export function SnipPanel(props: PluginWorkspacePanelProps) {
     }
   }, [props.workspaceId, picked, read]);
 
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), POLL_MS);
-    return () => clearInterval(timer);
-  }, [refresh]);
+  useLiveRpc(refresh, BACKSTOP_MS);
 
   const apply = useCallback(
     async (active: string[], sticky: boolean) => {

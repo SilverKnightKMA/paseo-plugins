@@ -1,11 +1,12 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { Text, View, ScrollView } from "react-native";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import { useRpc } from "@getpaseo/plugin/client";
 import { GetOmStatusRpc } from "../shared/rpc.js";
 import { OmCard, OmHeader, OmSection, OmSessionPicker, omChipLabel, omViaSuffix } from "./ui.js";
+import { useLiveRpc } from "./use-live.js";
 
-const POLL_MS = 2000;
+const BACKSTOP_MS = 15_000; // push-driven refresh; backstop catches new agents + dropped events
 
 export function OmStatusPanel(props: PluginWorkspacePanelProps) {
   const read = useRpc(GetOmStatusRpc);
@@ -21,11 +22,7 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
     }
   }, [props.workspaceId, picked, read]);
 
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), POLL_MS);
-    return () => clearInterval(timer);
-  }, [refresh]);
+  useLiveRpc(refresh, BACKSTOP_MS);
 
   const stale = data != null && data.present && (data.ageSec ?? 999) > 120;
   const c = props.theme.colors;
@@ -61,7 +58,7 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
                     }% · $${data.summary.sessionCostUsd.toFixed(2)}`,
                   ]
                 : []),
-              `live · updated ${data.ageSec ?? "?"}s ago · poll ${POLL_MS / 1000}s`,
+              `live · updated ${data.ageSec ?? "?"}s ago · live-push + ${BACKSTOP_MS / 1000}s backstop`,
             ]}
           />
           <OmSessionPicker

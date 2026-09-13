@@ -1,11 +1,12 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { Pressable, Text, View, ScrollView, TextInput } from "react-native";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import { useRpc } from "@getpaseo/plugin/client";
 import { GetTaskStateRpc, SetTaskControlRpc, type TaskPanelState } from "../shared/rpc.js";
 import { OmCard, OmHeader, OmSection, OmSessionPicker, omTimeAgo, omViaSuffix } from "./ui.js";
+import { useLiveRpc } from "./use-live.js";
 
-const POLL_MS = 2000;
+const BACKSTOP_MS = 15_000; // push-driven refresh; backstop catches new agents + dropped events
 
 /**
  * Task panel: READ-ONLY presentation of the session task list (statuses,
@@ -32,11 +33,7 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
     }
   }, [props.workspaceId, picked, read]);
 
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), POLL_MS);
-    return () => clearInterval(timer);
-  }, [refresh]);
+  useLiveRpc(refresh, BACKSTOP_MS);
 
   const sessionId = data?.sessionId;
   const resolved = data?.resolved;
