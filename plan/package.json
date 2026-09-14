@@ -1,7 +1,7 @@
 {
   "name": "plan",
   "private": true,
-  "version": "1.0.45",
+  "version": "1.0.47",
   "scripts": {
     "typecheck": "tsc --noEmit"
   },

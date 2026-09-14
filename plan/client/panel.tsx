@@ -49,13 +49,16 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: c.surface0 }} contentContainerStyle={{ padding: 8, gap: 8 }}>
+      {/* v1.0.47 (#65): trạng thái chưa có plan gọn còn MỘT caveat — trước đây header
+          dim + card rỗng + footer cùng nói "user-only/projection" 3 lần, nhìn như 2 card lặp */}
       <OmHeader
         c={c}
         title={headerTitle}
-        dim={[
-          engineLine,
-          steps.length > 0 ? `${data?.stepsDone ?? 0}/${steps.length} bước · ${mode}` : "plan-mode projection · approve là user-only",
-        ]}
+        dim={
+          !data || !data.present || mode === "inactive"
+            ? [engineLine]
+            : [engineLine, steps.length > 0 ? `${data?.stepsDone ?? 0}/${steps.length} bước · ${mode}` : "plan-mode projection · approve là user-only"]
+        }
       />
       <OmSessionPicker
         c={c}
@@ -203,9 +206,11 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
         </OmCard>
       )}
 
-      <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>
-        read-only projection — plan đổi qua write_plan/plan_step_done của model · approve/revise/off là user-only
-      </Text>
+      {data?.present && mode !== "inactive" ? (
+        <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>
+          read-only projection — plan đổi qua write_plan/plan_step_done của model · approve/revise/off là user-only
+        </Text>
+      ) : null}
     </ScrollView>
   );
 }
