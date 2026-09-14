@@ -20,4 +20,6 @@ export default function contribute(client: PluginClientContext) {
       context_.openPanel("plan");
     },
   });
+
+  return () => {};
 }
