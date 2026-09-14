@@ -79,7 +79,11 @@ export function TaskSnapshotCard(props: PluginTimelineItemProps<TaskSnapshotData
                 {`#${ch.id} ${ch.subject}`}
               </Text>
               <Text style={{ color: c.foregroundMuted, fontFamily: "monospace", fontSize: 11 }}>
-                {ch.from ? `${ch.from} → ${ch.to}` : `+ ${ch.to}`}
+                {/* v1.0.46 (#64): status không đổi thì mũi tên "pending → pending" đọc như
+                    no-op/bị bật lại —headline là CÁI GÌ đổi (verify/judge metadata). */}
+                {ch.from && ch.from !== ch.to
+                  ? `${ch.from} → ${ch.to}`
+                  : `⚙ ${d.fields?.[0] ? d.fields[0].field : "metadata"}`}
               </Text>
             </View>
           ))
