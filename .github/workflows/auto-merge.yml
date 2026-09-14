@@ -26,7 +26,11 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         run: |
           for i in $(seq 1 90); do
-            out=$(gh pr checks "$PR" 2>/dev/null) || { sleep 10; continue; }
+            # Exclude our own job's status line: while this job runs, `gh pr checks`
+            # reports it as pending — the loop would otherwise wait on itself
+            # forever and time out (self-deadlock, seen 2026-09-14 PR #10-#12).
+            out=$(gh pr checks "$PR" 2>/dev/null | grep -vE '^(automerge|Enable auto-merge)') || { sleep 10; continue; }
+            if [ -z "$out" ]; then sleep 10; continue; fi
             if echo "$out" | grep -qiE 'pending|in_progress'; then sleep 10; continue; fi
             if echo "$out" | grep -q fail; then
               echo "::notice::checks failed — leaving PR #$PR open for review"
