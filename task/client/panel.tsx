@@ -60,6 +60,7 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
     completed: { glyph: "✓", color: c.statusSuccess },
     in_progress: { glyph: "▶", color: c.accent },
     pending: { glyph: "·", color: c.foregroundMuted },
+    held: { glyph: "⚖", color: c.statusWarning }, // v1.0.47 #64: judge giữ — cần evidence
     cancelled: { glyph: "×", color: c.foregroundMuted },
     parked: { glyph: "⏸", color: c.statusWarning },
   };

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { PluginTimelineItemProps } from "@getpaseo/plugin/client";
 
-export type TaskStatus = "pending" | "in_progress" | "completed" | "cancelled" | "parked";
+export type TaskStatus = "pending" | "in_progress" | "held" | "completed" | "cancelled" | "parked";
 
 export type TaskSnapshotData = {
   tool: "task_create" | "task_update" | "task_list";
@@ -21,6 +21,7 @@ const marker = {
   completed: "✓",
   in_progress: "▶",
   pending: "·",
+  held: "⚖", // v1.0.47 #64: judge giữ completion — chờ evidence
   cancelled: "×",
   parked: "⏸",
 } as const;
@@ -43,6 +44,7 @@ export function TaskSnapshotCard(props: PluginTimelineItemProps<TaskSnapshotData
     completed: c.statusSuccess,
     in_progress: c.accent,
     pending: c.foregroundMuted,
+    held: c.statusWarning,
     cancelled: c.foregroundMuted,
     parked: c.statusWarning,
   } as const;
