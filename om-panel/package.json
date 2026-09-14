@@ -1,7 +1,7 @@
 {
   "name": "om-panel",
   "private": true,
-  "version": "1.0.34",
+  "version": "1.0.43",
   "scripts": {
     "typecheck": "tsc --noEmit"
   },

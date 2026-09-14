@@ -17,7 +17,7 @@ export default function contribute(client: PluginClientContext) {
     id: "task-open",
     title: "Tasks: session task list (read-only)",
     icon: "ListTodo",
-    keywords: ["task", "tasks", "todo", "plan", "progress"],
+    keywords: ["task", "tasks", "todo", "progress"],
     context: "workspace",
     onSelect(context_) {
       context_.openPanel("task");

@@ -68,6 +68,10 @@ function listSessions(memoryDir: string, indexLines: number): { briefs: SessionB
           for (const line of fs.readFileSync(full, "utf8").split("\n").slice(0, indexLines)) {
             if (line.trim()) indexHead.push(line.trim().slice(0, 100));
           }
+        } else if (f.name === "JOURNEY.md") {
+          // v1.0.43 (#62): journey KHÔNG phải topic — không đếm vào "N topics"
+          // (19 topic thật + journey bị đếm thành 20 lệch với dòng durable 19).
+          // Bytes vẫn cộng vào totalKb (journey là payload durable thật).
         } else {
           topics.push({ file: f.name, kb: Math.round(st.size / 102.4) / 10, modified: new Date(st.mtimeMs).toISOString() });
         }

@@ -132,53 +132,6 @@ export const SetTaskControlRpc = {
   }),
 };
 
-/**
- * #22 (engine v1.4.46): plan-mode status projection
- * (~/.pi/agent/plan-control/<sessionId>.status.json). Read-only view of the
- * read-only-mode extension's plan state so the panel can show awaiting/
- * tracking progress — plus the USER-ONLY door: approve/revise/off ride the
- * same control file the engine watches (~/.pi/agent/plan-control/
- * <sessionId>.json, v1.4.31 bridge). The model cannot approve its own plan;
- * these buttons are the panel path for that user-only action.
- */
-export const GetPlanStateRpc = {
-  name: "plan.get-state",
-  input: z.object({
-    sessionId: z.string(),
-  }),
-  output: z.object({
-    present: z.boolean(),
-    mode: z.enum(["inactive", "active", "awaiting", "tracking", "complete"]).nullable(),
-    stepsDone: z.number().nullable(),
-    stepsTotal: z.number().nullable(),
-    /** v1.0.42 (#62): what the plan is doing right now — first open step. */
-    currentStep: z.object({ index: z.number(), text: z.string() }).nullable(),
-    planFile: z.string().nullable(),
-    submittedAt: z.string().nullable(),
-    completedAt: z.string().nullable(),
-    updatedAt: z.string().nullable(),
-  }),
-};
-
-export type PlanPanelState = z.infer<typeof GetPlanStateRpc.output>;
-
-export const SetPlanControlRpc = {
-  name: "plan.set-control",
-  input: z.object({
-    sessionId: z.string(),
-    action: z.enum(["on", "approve", "revise", "off"]),
-  }),
-  output: z.object({
-    ok: z.boolean(),
-    sentAt: z.string(),
-    note: z.string().nullish(),
-  }),
-};
-
-/**
- * #37 (engine v1.4.52): goal draft/init — user duyệt bảng scope trên panel
- * thì goal mới chạy. Read goal-status projection + write goal-control bridge.
- */
 export const GetGoalStateRpc = {
   name: "goal.get-state",
   input: z.object({ workspaceId: z.string(), sessionId: z.string() }),

@@ -2,7 +2,7 @@ import React, { useCallback, useState } from "react";
 import { Pressable, Text, View, ScrollView, TextInput } from "react-native";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import { useRpc } from "@getpaseo/plugin/client";
-import { GetTaskStateRpc, SetTaskControlRpc, GetPlanStateRpc, SetPlanControlRpc, GetGoalStateRpc, SetGoalControlRpc, type TaskPanelState, type PlanPanelState, type GoalPanelState } from "../shared/rpc.js";
+import { GetTaskStateRpc, SetTaskControlRpc, GetGoalStateRpc, SetGoalControlRpc, type TaskPanelState, type GoalPanelState } from "../shared/rpc.js";
 import { OmCard, OmHeader, OmSection, OmSessionPicker, omTimeAgo, omViaSuffix } from "./ui.js";
 import { useLiveRpc } from "./use-live.js";
 
@@ -24,10 +24,6 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
   // v1.0.35: amend editor — task id đang mở ô nhập đề mới (user-only)
   const [amendFor, setAmendFor] = useState<number | null>(null);
   const [amendText, setAmendText] = useState("");
-  // v1.0.37 (#22): plan-mode projection + user-only approve/revise/off door
-  const planRead = useRpc(GetPlanStateRpc);
-  const planWrite = useRpc(SetPlanControlRpc);
-  const [plan, setPlan] = useState<PlanPanelState | null>(null);
   // v1.0.40 (#37): goal draft/init — bảng duyệt scope
   const goalRead = useRpc(GetGoalStateRpc);
   const goalWrite = useRpc(SetGoalControlRpc);
@@ -38,16 +34,14 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
       const next = await read({ workspaceId: props.workspaceId, sessionId: picked });
       setData(next);
       if (next.sessionId) {
-        setPlan(await planRead({ sessionId: next.sessionId }).catch(() => null));
         setGoal(await goalRead({ workspaceId: props.workspaceId, sessionId: next.sessionId }).catch(() => null));
       } else {
-        setPlan(null);
         setGoal(null);
       }
     } catch {
       // RPC hiccup — keep the last snapshot, next poll retries
     }
-  }, [props.workspaceId, picked, read, planRead, goalRead]);
+  }, [props.workspaceId, picked, read, goalRead]);
 
   useLiveRpc(refresh, BACKSTOP_MS);
 
@@ -342,9 +336,8 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
             {toggleChip(compact ? "Thu gọn ✓" : "Thu gọn", compact, () => setCompact((v) => !v))}
           </View>
 
-          {/* #22 (v1.0.37): plan-mode state + USER-ONLY approve door — engine
-              v1.4.46 writes the projection; the model cannot approve its own
-              plan, these buttons are that user-only path (control-file bridge). */}
+          {/* #37 (v1.0.40): goal draft/init — bảng duyệt scope; plan đã tách
+              sang plugin riêng "plan" (v1.0.43, #62). */}
           {goal?.present && goal.status === "draft" && goal.proposal ? (
             <OmCard c={c}>
               <OmSection c={c}>GOAL — BẢNG SCOPE CHỜ USER DUYỆT</OmSection>
@@ -411,101 +404,6 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
               </OmCard>
             );
           })()}
-          {plan?.present && plan.mode !== "inactive" ? (
-            <OmCard c={c}>
-              <OmSection c={c}>
-                PLAN —{" "}
-                {plan.mode === "awaiting"
-                  ? "CHỜ USER DUYỆT"
-                  : plan.mode === "tracking"
-                    ? "ĐANG THEO DÕI"
-                    : plan.mode === "complete"
-                      ? "HOÀN THÀNH"
-                      : "ĐANG VIẾT"}
-              </OmSection>
-              <View style={{ gap: 4 }}>
-                {(() => {
-                  const stepsDone = plan.stepsDone ?? 0;
-                  const stepsTotal = plan.stepsTotal ?? 0;
-                  const pct = stepsTotal > 0 ? Math.round((stepsDone / stepsTotal) * 100) : 0;
-                  return (
-                    <>
-                      <Text style={{ color: plan.mode === "awaiting" ? c.statusWarning : plan.mode === "complete" ? c.statusSuccess : c.foreground, fontSize: 11 }}>
-                        {plan.mode === "awaiting"
-                          ? "model đã nộp plan — chờ bạn duyệt (approve) hoặc bảo sửa lại (revise)"
-                          : plan.mode === "tracking"
-                            ? `đang thực thi: ${stepsDone}/${stepsTotal} bước`
-                            : plan.mode === "complete"
-                              ? `hoàn thành ${stepsDone}/${stepsTotal} bước — plan tự đóng${plan.completedAt ? ` lúc ${plan.completedAt.slice(11, 16)}Z` : ""}; file giữ trong thư viện plans`
-                              : "model đang viết plan (read-only mode)"}
-                      </Text>
-                      {plan.mode === "tracking" ? (
-                        <View style={{ height: 4, borderRadius: 2, backgroundColor: c.surface2, overflow: "hidden" }}>
-                          <View style={{ height: 4, width: `${pct}%`, backgroundColor: c.accent }} />
-                        </View>
-                      ) : null}
-                      {plan.mode === "tracking" && plan.currentStep ? (
-                        <Text style={{ color: c.foregroundMuted, fontSize: 10 }} numberOfLines={2}>
-                          ▸ đang làm #{plan.currentStep.index}: {plan.currentStep.text}
-                        </Text>
-                      ) : null}
-                    </>
-                  );
-                })()}
-                <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
-                  {plan.mode === "awaiting" ? (
-                    <Pressable
-                      onPress={() => {
-                        if (sessionId) void planWrite({ sessionId, action: "approve" }).then(refresh).catch(() => {});
-                      }}
-                      style={{
-                        backgroundColor: c.surface1,
-                        borderColor: c.statusSuccess,
-                        borderWidth: 1,
-                        borderRadius: 8,
-                        paddingHorizontal: 10,
-                        paddingVertical: 3,
-                      }}
-                    >
-                      <Text style={{ color: c.statusSuccess, fontSize: 11, fontWeight: "600" }}>✓ duyệt (user)</Text>
-                    </Pressable>
-                  ) : null}
-                  {plan.mode === "awaiting" ? (
-                    <Pressable
-                      onPress={() => {
-                        if (sessionId) void planWrite({ sessionId, action: "revise" }).then(refresh).catch(() => {});
-                      }}
-                      style={{
-                        backgroundColor: c.surface1,
-                        borderColor: c.statusWarning,
-                        borderWidth: 1,
-                        borderRadius: 8,
-                        paddingHorizontal: 10,
-                        paddingVertical: 3,
-                      }}
-                    >
-                      <Text style={{ color: c.statusWarning, fontSize: 11 }}>↺ sửa lại</Text>
-                    </Pressable>
-                  ) : null}
-                  <Pressable
-                    onPress={() => {
-                      if (sessionId) void planWrite({ sessionId, action: "off" }).then(refresh).catch(() => {});
-                    }}
-                      style={{
-                        backgroundColor: "transparent",
-                        borderColor: c.foregroundMuted,
-                        borderWidth: 1,
-                        borderRadius: 8,
-                        paddingHorizontal: 10,
-                        paddingVertical: 3,
-                      }}
-                    >
-                      <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>✕ bỏ plan</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </OmCard>
-          ) : null}
 
           <OmCard c={c}>
             <OmSection c={c}>TASKS — {open.length} open</OmSection>
