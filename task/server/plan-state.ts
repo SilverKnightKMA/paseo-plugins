@@ -20,8 +20,10 @@ const EMPTY: PlanPanelState = {
   mode: null,
   stepsDone: null,
   stepsTotal: null,
+  currentStep: null,
   planFile: null,
   submittedAt: null,
+  completedAt: null,
   updatedAt: null,
 };
 
@@ -40,16 +42,24 @@ export async function readPlanState(input: RpcInput<typeof GetPlanStateRpc>): Pr
   try {
     const p = JSON.parse(raw) as Record<string, unknown>;
     const mode = typeof p.mode === "string" ? p.mode : null;
-    if (mode !== "inactive" && mode !== "active" && mode !== "awaiting" && mode !== "tracking") {
+    if (mode !== "inactive" && mode !== "active" && mode !== "awaiting" && mode !== "tracking" && mode !== "complete") {
       return { ...EMPTY };
     }
+    const step =
+      p.currentStep && typeof p.currentStep === "object" &&
+      typeof (p.currentStep as { index?: unknown }).index === "number" &&
+      typeof (p.currentStep as { text?: unknown }).text === "string"
+        ? { index: (p.currentStep as { index: number }).index, text: (p.currentStep as { text: string }).text }
+        : null;
     return {
       present: true,
       mode,
       stepsDone: typeof p.stepsDone === "number" ? p.stepsDone : 0,
       stepsTotal: typeof p.stepsTotal === "number" ? p.stepsTotal : 0,
+      currentStep: step,
       planFile: typeof p.planFile === "string" ? p.planFile : null,
       submittedAt: typeof p.submittedAt === "string" ? p.submittedAt : null,
+      completedAt: typeof p.completedAt === "string" ? p.completedAt : null,
       updatedAt: typeof p.updatedAt === "string" ? p.updatedAt : null,
     };
   } catch {

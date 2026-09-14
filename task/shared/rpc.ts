@@ -148,11 +148,14 @@ export const GetPlanStateRpc = {
   }),
   output: z.object({
     present: z.boolean(),
-    mode: z.enum(["inactive", "active", "awaiting", "tracking"]).nullable(),
+    mode: z.enum(["inactive", "active", "awaiting", "tracking", "complete"]).nullable(),
     stepsDone: z.number().nullable(),
     stepsTotal: z.number().nullable(),
+    /** v1.0.42 (#62): what the plan is doing right now — first open step. */
+    currentStep: z.object({ index: z.number(), text: z.string() }).nullable(),
     planFile: z.string().nullable(),
     submittedAt: z.string().nullable(),
+    completedAt: z.string().nullable(),
     updatedAt: z.string().nullable(),
   }),
 };

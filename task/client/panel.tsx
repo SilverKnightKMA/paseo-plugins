@@ -414,7 +414,14 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
           {plan?.present && plan.mode !== "inactive" ? (
             <OmCard c={c}>
               <OmSection c={c}>
-                PLAN — {plan.mode === "awaiting" ? "CHỜ USER DUYỆT" : plan.mode === "tracking" ? "ĐANG THEO DÕI" : "ĐANG VIẾT"}
+                PLAN —{" "}
+                {plan.mode === "awaiting"
+                  ? "CHỜ USER DUYỆT"
+                  : plan.mode === "tracking"
+                    ? "ĐANG THEO DÕI"
+                    : plan.mode === "complete"
+                      ? "HOÀN THÀNH"
+                      : "ĐANG VIẾT"}
               </OmSection>
               <View style={{ gap: 4 }}>
                 {(() => {
@@ -423,17 +430,24 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
                   const pct = stepsTotal > 0 ? Math.round((stepsDone / stepsTotal) * 100) : 0;
                   return (
                     <>
-                      <Text style={{ color: plan.mode === "awaiting" ? c.statusWarning : c.foreground, fontSize: 11 }}>
+                      <Text style={{ color: plan.mode === "awaiting" ? c.statusWarning : plan.mode === "complete" ? c.statusSuccess : c.foreground, fontSize: 11 }}>
                         {plan.mode === "awaiting"
                           ? "model đã nộp plan — chờ bạn duyệt (approve) hoặc bảo sửa lại (revise)"
                           : plan.mode === "tracking"
                             ? `đang thực thi: ${stepsDone}/${stepsTotal} bước`
-                            : "model đang viết plan (read-only mode)"}
+                            : plan.mode === "complete"
+                              ? `hoàn thành ${stepsDone}/${stepsTotal} bước — plan tự đóng${plan.completedAt ? ` lúc ${plan.completedAt.slice(11, 16)}Z` : ""}; file giữ trong thư viện plans`
+                              : "model đang viết plan (read-only mode)"}
                       </Text>
                       {plan.mode === "tracking" ? (
                         <View style={{ height: 4, borderRadius: 2, backgroundColor: c.surface2, overflow: "hidden" }}>
                           <View style={{ height: 4, width: `${pct}%`, backgroundColor: c.accent }} />
                         </View>
+                      ) : null}
+                      {plan.mode === "tracking" && plan.currentStep ? (
+                        <Text style={{ color: c.foregroundMuted, fontSize: 10 }} numberOfLines={2}>
+                          ▸ đang làm #{plan.currentStep.index}: {plan.currentStep.text}
+                        </Text>
                       ) : null}
                     </>
                   );
