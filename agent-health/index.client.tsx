@@ -4,6 +4,8 @@ import { HealthPanel } from "./client/panel.js";
 import { SubagentNoticeCard, type SubagentNoticeData } from "./client/subagent-notice.js";
 import { MachineNoticeCard } from "./client/machine-notice.js";
 import { MutedAbortCard } from "./client/muted-abort.js";
+import { SystemChip } from "./client/system-chip.js";
+import { OmLogCard } from "./client/om-log.js";
 import { startZwLive } from "./client/zw-pill.js";
 
 export default function contribute(client: PluginClientContext) {
@@ -115,6 +117,56 @@ export default function contribute(client: PluginClientContext) {
     version: 2,
     schema: z.object({ message: z.string(), cls: z.enum(["relay-drop", "superseded"]) }),
     Component: MutedAbortCard,
+  });
+
+  // ── chat-polish (2026-09-14) ───────────────────────────────────────────
+  // Why: the daemon pi provider maps EVERY custom message (om-timeline,
+  // om.resume) to a plain assistant_message item (providers/pi/agent.js
+  // handleMessageEnd: role "custom" → text), and agent-manager injects
+  // "[System Error] …" as a fake assistant_message too. All three noise
+  // types therefore render exactly like agent prose. Restyle by prefix:
+  //   • "[System Error] …aborted…" → warning card (reuse muted-abort v2;
+  //     the old error-item transformer never sees these — wrong itemType)
+  //   • "[automatic] Your context was just compacted…" → one dim chip
+  //   • "om: …" multi-line status log → compact om card
+  // Render-layer only; transcripts and model context stay untouched.
+  client.addTimelineTransformer({
+    id: "chat-polish-transformer",
+    query: { itemType: "assistant_message" },
+    transform: ({ item }) => {
+      if (item.type !== "assistant_message") return undefined;
+      const trimmed = (item.text ?? "").trim();
+      if (trimmed.startsWith("[System Error]")) {
+        const message = trimmed.slice("[System Error]".length).trim();
+        const cls = /stopReason\s*=\s*error/i.test(message) ? ("relay-drop" as const) : ("superseded" as const);
+        return {
+          items: [{ type: "plugin" as const, kind: "muted-abort", version: 2, data: { message, cls } }],
+        };
+      }
+      if (trimmed.startsWith("[automatic] Your context was just compacted")) {
+        return {
+          items: [{ type: "plugin" as const, kind: "system-chip", version: 1, data: { notice: "context-compacted" } }],
+        };
+      }
+      if (trimmed.startsWith("om: ")) {
+        return { items: [{ type: "plugin" as const, kind: "om-log", version: 1, data: { text: trimmed } }] };
+      }
+      return undefined;
+    },
+  });
+
+  client.addTimelineRenderer({
+    kind: "system-chip",
+    version: 1,
+    schema: z.object({ notice: z.string() }),
+    Component: SystemChip,
+  });
+
+  client.addTimelineRenderer({
+    kind: "om-log",
+    version: 1,
+    schema: z.object({ text: z.string() }),
+    Component: OmLogCard,
   });
 
   return () => {
