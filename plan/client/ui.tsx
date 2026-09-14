@@ -142,11 +142,14 @@ export function OmSessionPicker(props: {
   sessions: { sessionId: string; label: string; active: boolean }[];
   selectedId: string | null | undefined;
   onPick: (sessionId: string | null) => void;
+  /** v1.0.51 (#67): dưới bao nhiêu session thì ẩn picker. Mặc định 2 như cũ;
+   *  plan truyền min={1} — session không có plan vẫn phải hiện picker (dùng chung). */
+  min?: number;
 }) {
-  const { c, sessions, selectedId, onPick } = props;
+  const { c, sessions, selectedId, onPick, min = 2 } = props;
   const [expanded, setExpanded] = useState(false);
   const [search, setSearch] = useState("");
-  if (sessions.length < 2) return null;
+  if (sessions.length < (min ?? 2)) return null;
   const q = search.trim().toLowerCase();
   const filtered = q
     ? sessions.filter((s) => s.sessionId.toLowerCase().includes(q) || s.label.toLowerCase().includes(q))

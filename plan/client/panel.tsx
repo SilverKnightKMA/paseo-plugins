@@ -57,7 +57,7 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
         dim={
           !data || !data.present || mode === "inactive"
             ? [engineLine]
-            : [engineLine, steps.length > 0 ? `${data?.stepsDone ?? 0}/${steps.length} bước · ${mode}` : "plan-mode projection · approve là user-only"]
+            : [engineLine, steps.length > 0 ? `${data?.stepsDone ?? 0}/${steps.length} bước · ${mode}` : "chưa có plan cho session này"]
         }
       />
       <OmSessionPicker
@@ -69,6 +69,7 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
         }))}
         selectedId={sessionId}
         onPick={(id) => setPicked(id)}
+        min={1}
       />
 
       {(!data || !data.present || mode === "inactive") && (data?.sessions ?? []).length === 0 ? (
