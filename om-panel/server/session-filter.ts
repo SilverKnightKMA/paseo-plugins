@@ -45,6 +45,21 @@ export function isHiddenSession(a: FilterAgentLike): boolean {
   return a.archivedAt != null || a.internal === true || isSubagentAgent(a);
 }
 
+/**
+ * Unwrap daemon `context.paseo.agents.list()` result: entries are
+ * {agent: {...}} wrappers, not flat agent records. Shared since v1.0.50
+ * (#68) — task/snip/plan used to hand-copy this and the plan port drifted
+ * (flat-shape unwrap → 0 agents → empty picker chips).
+ */
+export function unwrapAgents(entries: unknown[]): FilterAgentLike[] {
+  const out: FilterAgentLike[] = [];
+  for (const e of entries) {
+    const inner = (e as { agent?: unknown }).agent;
+    if (inner && typeof inner === "object") out.push(inner as FilterAgentLike);
+  }
+  return out;
+}
+
 export function activityOf(a: FilterAgentLike): number {
   return Math.max(
     Date.parse(a.lastUserMessageAt ?? "") || 0,

@@ -5,7 +5,7 @@ import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { GetPlanStateRpc, SetPlanControlRpc, type PlanPanelState } from "../shared/rpc.js";
 import { mergeLiveTitles, titleFor } from "./titles.js";
-import { isHiddenSession } from "./session-filter.js";
+import { isHiddenSession, unwrapAgents, type FilterAgentLike } from "./session-filter.js";
 
 /**
  * v1.0.45 (#62): session resolution + filter dùng CHUNG semantics với task/snip
@@ -45,26 +45,8 @@ function asMode(v: unknown): Mode | null {
 }
 
 // session visibility lives in ./session-filter.js (shared, pinned by check-shared-ui.py)
-type AgentLike = {
-  id?: unknown;
-  title?: unknown;
-  workspaceId?: unknown;
-  cwd?: unknown;
-  status?: unknown;
-  lastUserMessageAt?: unknown;
-  updatedAt?: unknown;
-  runtimeInfo?: { sessionId?: unknown } | null;
-};
 
-function unwrapAgents(entries: unknown[]): AgentLike[] {
-  const out: AgentLike[] = [];
-  for (const e of entries) {
-    if (!e || typeof e !== "object") continue;
-    const a = e as Record<string, unknown>;
-    if (typeof a.id === "string" && a.id) out.push(e as AgentLike);
-  }
-  return out;
-}
+// unwrapAgents lives in ./session-filter.js (shared, pinned — v1.0.50 #68)
 
 async function listSessionFiles(): Promise<string[]> {
   try {
@@ -126,7 +108,7 @@ export async function readPlanState(
   context: PluginHandlerContext,
 ): Promise<PlanPanelState> {
   try {
-    let agents: AgentLike[] = [];
+    let agents: FilterAgentLike[] = [];
     try {
       agents = unwrapAgents((await context.paseo.agents.list()).entries);
     } catch {
@@ -146,7 +128,7 @@ export async function readPlanState(
     } catch {
       // workspaces unavailable
     }
-    const inWsAgent = (a: AgentLike): boolean => {
+    const inWsAgent = (a: FilterAgentLike): boolean => {
       if (typeof a.workspaceId === "string" && a.workspaceId) return a.workspaceId === input.workspaceId;
       return rootDir != null && typeof a.cwd === "string" && a.cwd === rootDir;
     };
@@ -161,10 +143,10 @@ export async function readPlanState(
       const sessionId = (agent?.runtimeInfo?.sessionId as string) ?? null;
       if (sessionId) resolved = { agentId: input.agentId, agentTitle: (agent?.title as string) ?? null, sessionId, via: "agent" };
     } else {
-      const mains = agents.filter((a: AgentLike) => inWsAgent(a) && !isHiddenSession(a as never));
-      const running = mains.filter((a: AgentLike) => a.status === "running");
+      const mains = agents.filter((a: FilterAgentLike) => inWsAgent(a) && !isHiddenSession(a as never));
+      const running = mains.filter((a: FilterAgentLike) => a.status === "running");
       const pool = running.length > 0 ? running : mains;
-      const ts = (a: AgentLike) => Math.max(Date.parse(String(a.lastUserMessageAt ?? "")) || 0, Date.parse(String(a.updatedAt ?? "")) || 0);
+      const ts = (a: FilterAgentLike) => Math.max(Date.parse(String(a.lastUserMessageAt ?? "")) || 0, Date.parse(String(a.updatedAt ?? "")) || 0);
       const agent = pool.sort((a, b) => ts(b) - ts(a))[0];
       const sessionId = (agent?.runtimeInfo?.sessionId as string) ?? null;
       if (sessionId && agent?.id) resolved = { agentId: agent.id as string, agentTitle: (agent?.title as string) ?? null, sessionId, via: "workspace-active" };

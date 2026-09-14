@@ -1,7 +1,7 @@
 {
   "name": "om-status",
   "private": true,
-  "version": "1.0.34",
+  "version": "1.0.50",
   "scripts": {
     "typecheck": "tsc --noEmit"
   },

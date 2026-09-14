@@ -5,7 +5,7 @@ import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { GetTaskStateRpc, SetTaskControlRpc, type TaskPanelState } from "../shared/rpc.js";
 import { mergeLiveTitles, titleFor } from "./titles.js";
-import { isHiddenSession, type FilterAgentLike } from "./session-filter.js";
+import { isHiddenSession, unwrapAgents, type FilterAgentLike } from "./session-filter.js";
 
 const EMPTY: TaskPanelState = {
   present: false,
@@ -23,29 +23,8 @@ const EMPTY: TaskPanelState = {
   sessions: [],
 };
 
-type AgentLike = {
-  id?: string;
-  workspaceId?: string | null;
-  status?: string | null;
-  updatedAt?: string | null;
-  lastUserMessageAt?: string | null;
-  title?: string | null;
-  archivedAt?: string | null;
-  labels?: Record<string, string> | null;
-  cwd?: string | null;
-  runtimeInfo?: { sessionId?: string | null } | null;
-};
-
-// session visibility lives in ./session-filter.js (shared, pinned by check-shared-ui.py)
-
-function unwrapAgents(entries: unknown[]): AgentLike[] {
-  const out: AgentLike[] = [];
-  for (const e of entries) {
-    const inner = (e as { agent?: unknown }).agent;
-    if (inner && typeof inner === "object") out.push(inner as AgentLike);
-  }
-  return out;
-}
+// session visibility + unwrapAgents live in ./session-filter.js
+// (shared, pinned by check-shared-ui.py — v1.0.50 #68 dùng chung 3 plugin)
 
 function statusDir(): string {
   return path.join(os.homedir(), ".pi", "agent", "task-status");
@@ -160,7 +139,7 @@ export async function readTaskState(
   context: PluginHandlerContext,
 ): Promise<TaskPanelState> {
   try {
-    let agents: AgentLike[] = [];
+    let agents: FilterAgentLike[] = [];
     try {
       agents = unwrapAgents((await context.paseo.agents.list()).entries);
     } catch {
@@ -180,7 +159,7 @@ export async function readTaskState(
     } catch {
       // workspaces unavailable
     }
-    const inWsAgent = (a: AgentLike): boolean => {
+    const inWsAgent = (a: FilterAgentLike): boolean => {
       if (a.workspaceId) return a.workspaceId === input.workspaceId;
       return rootDir != null && a.cwd != null && a.cwd === rootDir;
     };
@@ -195,10 +174,10 @@ export async function readTaskState(
       const sessionId = agent?.runtimeInfo?.sessionId ?? null;
       if (sessionId) resolved = { agentId: input.agentId, agentTitle: agent?.title ?? null, sessionId, via: "agent" };
     } else {
-      const mains = agents.filter((a: AgentLike) => inWsAgent(a) && !isHiddenSession(a));
+      const mains = agents.filter((a: FilterAgentLike) => inWsAgent(a) && !isHiddenSession(a));
       const running = mains.filter((a) => a.status === "running");
       const pool = running.length > 0 ? running : mains;
-      const ts = (a: AgentLike) => Math.max(Date.parse(a.lastUserMessageAt ?? "") || 0, Date.parse(a.updatedAt ?? "") || 0);
+      const ts = (a: FilterAgentLike) => Math.max(Date.parse(a.lastUserMessageAt ?? "") || 0, Date.parse(a.updatedAt ?? "") || 0);
       const agent = pool.sort((a, b) => ts(b) - ts(a))[0];
       const sessionId = agent?.runtimeInfo?.sessionId ?? null;
       if (sessionId && agent?.id) resolved = { agentId: agent.id, agentTitle: agent?.title ?? null, sessionId, via: "workspace-active" };
