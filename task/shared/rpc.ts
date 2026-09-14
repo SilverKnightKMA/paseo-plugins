@@ -27,6 +27,11 @@ export const TaskBriefSchema = z.object({
   /** v1.0.35 doneCheck guard (engine v1.4.38): agent rewrites of the sheet
    * (cap 2) + the old→new trail the judge also sees. */
   descAmendments: z.number().optional(),
+  /** v1.0.40 (engine v1.4.53): bảng đề xuất sửa đề chờ user duyệt. */
+  proposals: z.array(z.object({
+    id: z.string(), at: z.number(), from: z.string(), to: z.string(),
+    reason: z.string(), status: z.string(), decidedAt: z.number().optional(),
+  })).optional(),
   descHistory: z
     .array(
       z.object({
@@ -109,11 +114,15 @@ export const SetTaskControlRpc = {
     workspaceId: z.string(),
     sessionId: z.string(),
     id: z.number().int().positive(),
-    action: z.enum(["unpark", "strict", "reopen", "amend"]),
+    action: z.enum(["unpark", "strict", "reopen", "amend", "proposal-decide"]),
     /** strict only: target value (unpark ignores it) */
     value: z.boolean().nullish(),
     /** amend only (v1.0.35): the new done-check text, authored by the user. */
     description: z.string().nullish(),
+    /** proposal-decide only (v1.0.40, engine v1.4.53). */
+    proposalId: z.string().nullish(),
+    decision: z.enum(["apply", "reject"]).nullish(),
+    note: z.string().nullish(),
   }),
   output: z.object({
     ok: z.boolean(),
@@ -155,6 +164,46 @@ export const SetPlanControlRpc = {
   input: z.object({
     sessionId: z.string(),
     action: z.enum(["on", "approve", "revise", "off"]),
+  }),
+  output: z.object({
+    ok: z.boolean(),
+    sentAt: z.string(),
+    note: z.string().nullish(),
+  }),
+};
+
+/**
+ * #37 (engine v1.4.52): goal draft/init — user duyệt bảng scope trên panel
+ * thì goal mới chạy. Read goal-status projection + write goal-control bridge.
+ */
+export const GetGoalStateRpc = {
+  name: "goal.get-state",
+  input: z.object({ workspaceId: z.string(), sessionId: z.string() }),
+  output: z.object({
+    present: z.boolean(),
+    goalId: z.string().nullable(),
+    status: z.string().nullable(),
+    anchor: z.string().nullable(),
+    epoch: z.number().nullable(),
+    members: z.number().nullable(),
+    leaseUsed: z.boolean().nullable(),
+    proposal: z.object({
+      anchor: z.string(),
+      includeIds: z.array(z.number()),
+      excludeIds: z.array(z.number()),
+      rationale: z.string(),
+    }).nullable(),
+    updatedAt: z.string().nullable(),
+  }),
+};
+export type GoalPanelState = z.infer<typeof GetGoalStateRpc.output>;
+
+export const SetGoalControlRpc = {
+  name: "goal.set-control",
+  input: z.object({
+    workspaceId: z.string(),
+    sessionId: z.string(),
+    action: z.enum(["confirm", "revise", "cancel"]),
   }),
   output: z.object({
     ok: z.boolean(),

@@ -2,7 +2,7 @@ import React, { useCallback, useState } from "react";
 import { Pressable, Text, View, ScrollView, TextInput } from "react-native";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import { useRpc } from "@getpaseo/plugin/client";
-import { GetTaskStateRpc, SetTaskControlRpc, GetPlanStateRpc, SetPlanControlRpc, type TaskPanelState, type PlanPanelState } from "../shared/rpc.js";
+import { GetTaskStateRpc, SetTaskControlRpc, GetPlanStateRpc, SetPlanControlRpc, GetGoalStateRpc, SetGoalControlRpc, type TaskPanelState, type PlanPanelState, type GoalPanelState } from "../shared/rpc.js";
 import { OmCard, OmHeader, OmSection, OmSessionPicker, omTimeAgo, omViaSuffix } from "./ui.js";
 import { useLiveRpc } from "./use-live.js";
 
@@ -28,6 +28,10 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
   const planRead = useRpc(GetPlanStateRpc);
   const planWrite = useRpc(SetPlanControlRpc);
   const [plan, setPlan] = useState<PlanPanelState | null>(null);
+  // v1.0.40 (#37): goal draft/init — bảng duyệt scope
+  const goalRead = useRpc(GetGoalStateRpc);
+  const goalWrite = useRpc(SetGoalControlRpc);
+  const [goal, setGoal] = useState<GoalPanelState | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -35,13 +39,15 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
       setData(next);
       if (next.sessionId) {
         setPlan(await planRead({ sessionId: next.sessionId }).catch(() => null));
+        setGoal(await goalRead({ workspaceId: props.workspaceId, sessionId: next.sessionId }).catch(() => null));
       } else {
         setPlan(null);
+        setGoal(null);
       }
     } catch {
       // RPC hiccup — keep the last snapshot, next poll retries
     }
-  }, [props.workspaceId, picked, read, planRead]);
+  }, [props.workspaceId, picked, read, planRead, goalRead]);
 
   useLiveRpc(refresh, BACKSTOP_MS);
 
@@ -339,6 +345,72 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
           {/* #22 (v1.0.37): plan-mode state + USER-ONLY approve door — engine
               v1.4.46 writes the projection; the model cannot approve its own
               plan, these buttons are that user-only path (control-file bridge). */}
+          {goal?.present && goal.status === "draft" && goal.proposal ? (
+            <OmCard c={c}>
+              <OmSection c={c}>GOAL — BẢNG SCOPE CHỜ USER DUYỆT</OmSection>
+              <View style={{ gap: 4 }}>
+                <Text style={{ color: c.foreground, fontSize: 11 }}>
+                  đích: {goal.proposal.anchor}
+                </Text>
+                <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>
+                  vào: {goal.proposal.includeIds.length ? goal.proposal.includeIds.map((i) => `#${i}`).join(" ") : "mọi task mở"}
+                  {goal.proposal.excludeIds.length ? ` · bỏ: ${goal.proposal.excludeIds.map((i) => `#${i}`).join(" ")}` : ""}
+                </Text>
+                {goal.proposal.rationale ? (
+                  <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>lý do: {goal.proposal.rationale}</Text>
+                ) : null}
+                <View style={{ flexDirection: "row", gap: 6, marginTop: 2 }}>
+                  <Pressable
+                    onPress={() => { if (sessionId) void goalWrite({ workspaceId: props.workspaceId, sessionId, action: "confirm" }).then(refresh).catch(() => {}); }}
+                    style={{ backgroundColor: c.surface1, borderColor: c.statusSuccess, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 }}
+                  >
+                    <Text style={{ color: c.statusSuccess, fontSize: 11, fontWeight: "600" }}>✓ duyệt — chạy goal</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => { if (sessionId) void goalWrite({ workspaceId: props.workspaceId, sessionId, action: "revise" }).then(refresh).catch(() => {}); }}
+                    style={{ backgroundColor: c.surface1, borderColor: c.statusWarning, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 }}
+                  >
+                    <Text style={{ color: c.statusWarning, fontSize: 11 }}>↺ sửa lại</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => { if (sessionId) void goalWrite({ workspaceId: props.workspaceId, sessionId, action: "cancel" }).then(refresh).catch(() => {}); }}
+                    style={{ backgroundColor: c.surface1, borderColor: c.statusDanger, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 }}
+                  >
+                    <Text style={{ color: c.statusDanger, fontSize: 11 }}>✗ hủy</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </OmCard>
+          ) : null}
+          {(() => {
+            const pend = (data?.tasks ?? []).flatMap((t) => (t.proposals ?? []).filter((x) => x.status === "pending").map((x) => ({ task: t.id, ...x })));
+            if (!pend.length) return null;
+            return (
+              <OmCard c={c}>
+                <OmSection c={c}>ĐỀ XUẤT SỬA ĐỀ ({pend.length}) — AMEND BỊ CHẶN, USER QUYẾT</OmSection>
+                {pend.map((x) => (
+                  <View key={x.id} style={{ gap: 3, marginBottom: 6 }}>
+                    <Text style={{ color: c.foreground, fontSize: 11 }}>#{x.task} · {x.from.slice(0, 60)} → {x.to.slice(0, 60)}</Text>
+                    {x.reason ? <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>lý do: {x.reason.slice(0, 120)}</Text> : null}
+                    <View style={{ flexDirection: "row", gap: 6 }}>
+                      <Pressable
+                        onPress={() => { if (sessionId) void write({ workspaceId: props.workspaceId, sessionId, id: x.task, action: "proposal-decide", proposalId: x.id, decision: "apply" }).then(refresh).catch(() => {}); }}
+                        style={{ backgroundColor: c.surface1, borderColor: c.statusSuccess, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 }}
+                      >
+                        <Text style={{ color: c.statusSuccess, fontSize: 11, fontWeight: "600" }}>✓ áp dụng (không tốn cap)</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => { if (sessionId) void write({ workspaceId: props.workspaceId, sessionId, id: x.task, action: "proposal-decide", proposalId: x.id, decision: "reject" }).then(refresh).catch(() => {}); }}
+                        style={{ backgroundColor: c.surface1, borderColor: c.statusDanger, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 }}
+                      >
+                        <Text style={{ color: c.statusDanger, fontSize: 11 }}>✗ từ chối</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))}
+              </OmCard>
+            );
+          })()}
           {plan?.present && plan.mode !== "inactive" ? (
             <OmCard c={c}>
               <OmSection c={c}>
