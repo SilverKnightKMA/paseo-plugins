@@ -71,15 +71,14 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
         onPick={(id) => setPicked(id)}
       />
 
-      {!data || !data.present || mode === "inactive" ? (
-        <OmCard c={c}>
-          <OmSection c={c}>PLAN</OmSection>
-          <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>
-            chưa có plan cho session này — model vào plan mode qua enter_plan_mode / write_plan; sau khi model
-            nộp plan, bảng duyệt hiện ở đây
-          </Text>
-        </OmCard>
-      ) : (
+      {(!data || !data.present || mode === "inactive") && (data?.sessions ?? []).length === 0 ? (
+        <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>
+          chưa có session nào có plan status trong workspace này — picker sẽ có chip sau khi plan engine chạy lần đầu
+        </Text>
+      ) : null}
+
+      {/* v1.0.48 (#65/#67): card rỗng "PLAN" gộp vào header dim ở trên — một card duy nhất. */}
+      {data?.present && mode !== "inactive" && mode !== undefined ? (
         <OmCard c={c}>
           <OmSection c={c}>
             PLAN —{" "}
@@ -204,7 +203,7 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
             )}
           </View>
         </OmCard>
-      )}
+      ) : null}
 
       {data?.present && mode !== "inactive" ? (
         <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>

@@ -187,7 +187,16 @@ export async function readPlanState(
     }
 
     if (!resolved) {
-      return { ...EMPTY, sessions, note: "no active agent with a session — pick a chip once the plan engine has run" };
+      // v1.0.48 (#67): note tự chẩn đoán — đếm agents / khớp workspace / file plan
+      // status để panel tự kể vì sao chips rỗng thay vì mò mẫm.
+      return {
+        ...EMPTY,
+        sessions,
+        note:
+          sessions.length > 0
+            ? "no active agent with a session — pick a chip"
+            : `no session match — agents:${agents.length} inWs:${agents.filter(inWsAgent).length} planFiles:${withFiles.size} (ws:${input.workspaceId || "—"})`,
+      };
     }
 
     const status = await readStatus(resolved.sessionId);
