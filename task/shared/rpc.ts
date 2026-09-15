@@ -4,11 +4,15 @@ export const TaskBriefSchema = z.object({
   id: z.number(),
   subject: z.string(),
   description: z.string(),
-  status: z.enum(["pending", "in_progress", "completed", "cancelled", "parked"]),
+  status: z.enum(["pending", "in_progress", "held", "completed", "cancelled", "parked"]),
   evidence: z.string().nullable(),
   blockedBy: z.array(z.number()),
   blocks: z.array(z.number()),
   updatedAt: z.number(),
+  /** v1.0.54 (engine v1.4.68 #47 Phase B): the bridged plan this step-task
+   *  belongs to — drives the [plan] chip on task rows. */
+  planId: z.string().nullish(),
+  stepIndex: z.number().nullish(),
   /** layer-2 (v1.4.26): judge counters + park reason — optional for older projections */
   failStreak: z.number().optional(),
   judgeRounds: z.number().optional(),

@@ -78,13 +78,23 @@ async function readStatus(sessionId: string): Promise<PlanPanelState | null> {
     const steps = Array.isArray(p.steps)
       ? p.steps
           .filter(
-            (s): s is { index: number; text: string; done: boolean } =>
+            (s): s is { index: number; text: string; done: boolean; taskRef?: { id?: unknown; status?: unknown } } =>
               !!s && typeof s === "object" &&
               typeof (s as { index?: unknown }).index === "number" &&
               typeof (s as { text?: unknown }).text === "string" &&
               typeof (s as { done?: unknown }).done === "boolean",
           )
-          .map((s) => ({ index: s.index, text: s.text, done: s.done }))
+          .map((s) => ({
+            index: s.index,
+            text: s.text,
+            done: s.done,
+            // v1.0.54 (engine v1.4.68): bridged step → its task on the board
+            taskRef:
+              !!s.taskRef && typeof s.taskRef === "object" &&
+              typeof s.taskRef.id === "number" && typeof s.taskRef.status === "string"
+                ? { id: s.taskRef.id, status: s.taskRef.status }
+                : undefined,
+          }))
       : [];
     return {
       ...EMPTY,

@@ -37,7 +37,14 @@ export const GetPlanStateRpc = {
     stepsDone: z.number().nullable(),
     stepsTotal: z.number().nullable(),
     /** v1.4.62 (#62): the full step list intact — a checklist like task rows. */
-    steps: z.array(z.object({ index: z.number(), text: z.string(), done: z.boolean() })),
+    steps: z.array(z.object({
+      index: z.number(),
+      text: z.string(),
+      done: z.boolean(),
+      /** v1.0.54 (engine v1.4.68 #47 Phase B): the step-task backing this step
+       *  on the task board — drives ✓/⚖/▸ glyphs; absent on unbridged plans. */
+      taskRef: z.object({ id: z.number(), status: z.string() }).nullish(),
+    })),
     currentStep: z.object({ index: z.number(), text: z.string() }).nullable(),
     planFile: z.string().nullable(),
     submittedAt: z.string().nullable(),

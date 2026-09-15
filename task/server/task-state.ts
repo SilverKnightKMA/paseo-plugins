@@ -55,6 +55,8 @@ async function readProjection(sessionId: string): Promise<TaskPanelState | null>
         blockedBy?: number[];
         blocks?: number[];
         updatedAt?: number;
+        planId?: string;
+        stepIndex?: number;
         failStreak?: number;
         judgeRounds?: number;
         appealReason?: string;
@@ -69,11 +71,14 @@ async function readProjection(sessionId: string): Promise<TaskPanelState | null>
       id: t.id,
       subject: t.subject,
       description: t.description ?? "",
-      status: (["pending", "in_progress", "completed", "cancelled", "parked"] as const).includes(
-        t.status as "pending" | "in_progress" | "completed" | "cancelled" | "parked",
+      status: (["pending", "in_progress", "held", "completed", "cancelled", "parked"] as const).includes(
+        t.status as "pending" | "in_progress" | "held" | "completed" | "cancelled" | "parked",
       )
-        ? (t.status as "pending" | "in_progress" | "completed" | "cancelled" | "parked")
+        ? (t.status as "pending" | "in_progress" | "held" | "completed" | "cancelled" | "parked")
         : "pending",
+      // v1.0.54 (engine v1.4.68 #47 Phase B): plan-bridge stamp → [plan] chip
+      planId: typeof t.planId === "string" && t.planId.startsWith("p-") ? t.planId : null,
+      stepIndex: typeof t.stepIndex === "number" && t.stepIndex > 0 ? t.stepIndex : null,
       evidence: t.evidence ?? null,
       blockedBy: t.blockedBy ?? [],
       blocks: t.blocks ?? [],

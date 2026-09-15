@@ -149,23 +149,46 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
 
             {steps.length > 0 ? (
               <View style={{ gap: 3, marginTop: 4 }}>
-                {steps.map((s) => (
-                  <View key={s.index} style={{ flexDirection: "row", gap: 6, alignItems: "flex-start" }}>
-                    <Text style={{ color: s.done ? c.statusSuccess : currentIdx === s.index ? c.accent : c.foregroundMuted, fontSize: 11 }}>
-                      {s.done ? "✓" : currentIdx === s.index ? "▸" : "○"}
-                    </Text>
-                    <Text
-                      style={{
-                        color: s.done ? c.foregroundMuted : currentIdx === s.index ? c.foreground : c.foregroundMuted,
-                        fontSize: 10,
-                        flex: 1,
-                        textDecorationLine: s.done ? "line-through" : "none",
-                      }}
-                    >
-                      {s.text}
-                    </Text>
-                  </View>
-                ))}
+                {steps.map((s) => {
+                  // v1.0.54 (#47 Phase B): bridged steps derive their glyph from the
+                  // step-task's live status — ✓ verified-done · ⚖ judge held · ▸ in
+                  // progress · ○ pending. Unbridged steps keep the old ✓/▸/○ set.
+                  const st = s.taskRef?.status;
+                  const glyph = s.done
+                    ? "✓"
+                    : st === "held"
+                      ? "⚖"
+                      : st === "in_progress"
+                        ? "▸"
+                        : st === "completed"
+                          ? "✓"
+                          : currentIdx === s.index
+                            ? "▸"
+                            : "○";
+                  const glyphColor = s.done
+                    ? c.statusSuccess
+                    : st === "held"
+                      ? c.statusWarning
+                      : st === "in_progress" || currentIdx === s.index
+                        ? c.accent
+                        : c.foregroundMuted;
+                  return (
+                    <View key={s.index} style={{ flexDirection: "row", gap: 6, alignItems: "flex-start" }}>
+                      <Text style={{ color: glyphColor, fontSize: 11 }}>{glyph}</Text>
+                      <Text
+                        style={{
+                          color: s.done ? c.foregroundMuted : currentIdx === s.index ? c.foreground : c.foregroundMuted,
+                          fontSize: 10,
+                          flex: 1,
+                          textDecorationLine: s.done ? "line-through" : "none",
+                        }}
+                      >
+                        {s.text}
+                        {s.taskRef ? <Text style={{ color: c.foregroundMuted, fontSize: 9 }}> #{s.taskRef.id}</Text> : null}
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
             ) : null}
 

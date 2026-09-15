@@ -100,7 +100,7 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
                 textDecorationLine: t.status === "cancelled" ? "line-through" : "none",
               }}
             >
-              #{t.id} {t.subject}
+              #{t.id} {t.subject}{t.planId ? <Text style={{ color: c.accent, fontSize: 10, opacity: 0.85 }}>{t.stepIndex ? ` [plan · step ${t.stepIndex}]` : " [plan]"}</Text> : null}
             </Text>
             {t.description && !compact ? (
               <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>{t.description}</Text>
