@@ -8,12 +8,12 @@ import { mergeLiveTitles, titleFor } from "./titles.js";
 import { isHiddenSession, unwrapAgents, type FilterAgentLike } from "./session-filter.js";
 
 /**
- * v1.0.45 (#62): session resolution + filter dùng CHUNG semantics với task/snip
- * (session-filter.ts / titles.ts shared, pinned bởi check-shared-ui.py):
+ * v1.0.45 (#62): session resolution + filter share SEMANTICS with task/snip
+ * (session-filter.ts / titles.ts shared, pinned by check-shared-ui.py):
  * hide archived/subagent/internal; explicit chip > agentId (pill) >
- * workspace-active main chat. Engine read-only-mode là single writer của
- * ~/.pi/agent/plan-control/<sessionId>.status.json; module này chỉ đọc +
- * ghi control file cho user action.
+ * workspace-active main chat. The engine's read-only mode is the single writer of
+ * ~/.pi/agent/plan-control/<sessionId>.status.json; this module only reads it and
+ * writes the control file for user actions.
  */
 
 const EMPTY: PlanPanelState = {
@@ -62,7 +62,7 @@ async function readStatus(sessionId: string): Promise<PlanPanelState | null> {
   try {
     raw = await readFile(path.join(controlDir(), `${sessionId}.status.json`), "utf8");
   } catch {
-    return null; // engine chưa viết — session chạy ext cũ hoặc chưa dùng plan
+    return null; // engine has not written yet — session runs an older ext or plan mode unused
   }
   try {
     const p = JSON.parse(raw) as Record<string, unknown>;
@@ -99,7 +99,7 @@ async function readStatus(sessionId: string): Promise<PlanPanelState | null> {
       updatedAt: typeof p.updatedAt === "string" ? p.updatedAt : null,
     };
   } catch {
-    return null; // torn read — atomic rename làm chuyện này hiếm
+    return null; // torn read — atomic rename makes this rare
   }
 }
 
@@ -152,7 +152,7 @@ export async function readPlanState(
       if (sessionId && agent?.id) resolved = { agentId: agent.id as string, agentTitle: (agent?.title as string) ?? null, sessionId, via: "workspace-active" };
     }
 
-    // 2) side list: main-chat sessions của workspace này từng có plan status
+    // 2) side list: main-chat sessions of this workspace that ever had a plan status
     const withFiles = new Set(await listSessionFiles());
     const titleCache = mergeLiveTitles(titleBySession);
     const sessions: PlanPanelState["sessions"] = [];
@@ -169,8 +169,8 @@ export async function readPlanState(
     }
 
     if (!resolved) {
-      // v1.0.48 (#67): note tự chẩn đoán — đếm agents / khớp workspace / file plan
-      // status để panel tự kể vì sao chips rỗng thay vì mò mẫm.
+      // v1.0.48 (#67): self-diagnosing note — count agents / match workspace /
+      // plan-status file so the panel can explain why chips are empty instead of guessing.
       return {
         ...EMPTY,
         sessions,
@@ -189,7 +189,7 @@ export async function readPlanState(
         sessionId: resolved.sessionId,
         resolved,
         sessions,
-        note: "engine chưa ghi plan status cho session này (ext < v1.4.46 hoặc chưa dùng plan)",
+        note: "engine has not written a plan status for this session (ext < v1.4.46 or plan mode unused)",
       };
     }
     return { ...status, sessionId: resolved.sessionId, resolved, sessions };
@@ -212,6 +212,6 @@ export async function writePlanControl(
   return {
     ok: true,
     sentAt,
-    note: "engine áp dụng trong ~1s — panel sẽ tự refresh (ack = engine online)",
+    note: "engine applies within ~1s — the panel will auto-refresh (ack = engine online)",
   };
 }

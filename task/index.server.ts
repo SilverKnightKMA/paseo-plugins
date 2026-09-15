@@ -14,7 +14,7 @@ export default function contribute(server: PluginServerContext) {
     }
   });
 
-  // #37 (v1.0.40): goal draft/init — bảng duyệt scope.
+  // #37 (v1.0.40): goal draft/init — scope approval board.
   server.handle(GetGoalStateRpc, async (input) => readGoalState(input));
   server.handle(SetGoalControlRpc, async (input) => {
     try {

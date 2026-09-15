@@ -142,8 +142,8 @@ export function OmSessionPicker(props: {
   sessions: { sessionId: string; label: string; active: boolean }[];
   selectedId: string | null | undefined;
   onPick: (sessionId: string | null) => void;
-  /** v1.0.51 (#67): dưới bao nhiêu session thì ẩn picker. Mặc định 2 như cũ;
-   *  plan truyền min={1} — session không có plan vẫn phải hiện picker (dùng chung). */
+  /** v1.0.51 (#67): below how many sessions the picker is hidden. Default 2 as before;
+   *  plan passes min={1} — sessions without a plan must still show the picker (shared component). */
   min?: number;
 }) {
   const { c, sessions, selectedId, onPick, min = 2 } = props;

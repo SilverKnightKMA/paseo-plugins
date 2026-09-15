@@ -64,7 +64,7 @@ export function MachineNoticeCard(props: PluginTimelineItemProps<MachineNoticeDa
         <Text style={{ color: c.foreground, fontSize: 13, fontWeight: "600" as const, flexShrink: 1 }} numberOfLines={1}>
           {poolId ?? d.kind}
         </Text>
-        <Text style={{ color: c.foregroundMuted, fontSize: 11, marginLeft: "auto" }}>máy sinh</Text>
+        <Text style={{ color: c.foregroundMuted, fontSize: 11, marginLeft: "auto" }}>machine origin</Text>
       </View>
       <Text style={{ color: c.foregroundMuted, fontSize: 12, lineHeight: 17 }}>{body}</Text>
     </View>

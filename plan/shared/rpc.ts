@@ -1,11 +1,11 @@
 import { z } from "zod";
 
 /**
- * v1.0.45 (#62): plan plugin dùng CHUNG session filter với task/snip — RPC
- * hình dạng giống GetTaskStateRpc (workspaceId + sessionId/agentId optional,
- * trả sessions chips đã lọc qua session-filter.ts shared). Projection nguồn:
+ * v1.0.45 (#62): the plan plugin SHARES its session filter with task/snip — the RPC
+ * shape mirrors GetTaskStateRpc (workspaceId + optional sessionId/agentId,
+ * returns session chips filtered through the shared session-filter.ts). Projection source:
  * ~/.pi/agent/plan-control/<sessionId>.status.json (engine v1.4.46+; v1.4.62
- * thêm steps nguyên vẹn). Control file là cửa USER-ONLY (approve/revise/off).
+ * adds steps intact). The control file is the USER-ONLY door (approve/revise/off).
  */
 export const GetPlanStateRpc = {
   name: "plan.get-state",
@@ -36,7 +36,7 @@ export const GetPlanStateRpc = {
     mode: z.enum(["inactive", "active", "awaiting", "tracking", "complete"]).nullable(),
     stepsDone: z.number().nullable(),
     stepsTotal: z.number().nullable(),
-    /** v1.4.62 (#62): danh sách bước nguyên vẹn — checklist như task rows. */
+    /** v1.4.62 (#62): the full step list intact — a checklist like task rows. */
     steps: z.array(z.object({ index: z.number(), text: z.string(), done: z.boolean() })),
     currentStep: z.object({ index: z.number(), text: z.string() }).nullable(),
     planFile: z.string().nullable(),

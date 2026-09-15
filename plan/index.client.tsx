@@ -12,7 +12,7 @@ export default function contribute(client: PluginClientContext) {
 
   client.addCommandCenterItem({
     id: "plan-open",
-    title: "Plan: plan-mode status + duyệt plan",
+    title: "Plan: plan-mode status + approve plan",
     icon: "Map",
     keywords: ["plan", "approve", "steps", "roadmap"],
     context: "workspace",

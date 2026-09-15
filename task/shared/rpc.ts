@@ -27,7 +27,7 @@ export const TaskBriefSchema = z.object({
   /** v1.0.35 doneCheck guard (engine v1.4.38): agent rewrites of the sheet
    * (cap 2) + the old→new trail the judge also sees. */
   descAmendments: z.number().optional(),
-  /** v1.0.40 (engine v1.4.53): bảng đề xuất sửa đề chờ user duyệt. */
+  /** v1.0.40 (engine v1.4.53): board of description-amendment proposals awaiting the user's decision. */
   proposals: z.array(z.object({
     id: z.string(), at: z.number(), from: z.string(), to: z.string(),
     reason: z.string(), status: z.string(), decidedAt: z.number().optional(),

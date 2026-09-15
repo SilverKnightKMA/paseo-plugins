@@ -6,14 +6,14 @@ import { GetPlanStateRpc, SetPlanControlRpc, type PlanPanelState } from "../shar
 import { OmCard, OmHeader, OmSection, OmSessionPicker, omViaSuffix } from "./ui.js";
 import { useLiveRpc } from "./use-live.js";
 
-const BACKSTOP_MS = 15_000; // push-driven refresh; backstop bắt session mới + event rớt
+const BACKSTOP_MS = 15_000; // push-driven refresh; backstop catches new sessions + dropped events
 
 /**
- * Plan panel (v1.0.45, #62): session filter dùng CHUNG semantics với task/snip
- * (chips qua shared session-filter). READ-ONLY projection của plan-mode +
- * cửa USER-ONLY approve/revise/off (control-file bridge). Steps render dạng
- * checklist như task rows (engine v1.4.62 đưa steps nguyên vẹn vào payload).
- * Plan tự đóng khi hết bước (mode "complete").
+ * Plan panel (v1.0.45, #62): the session filter shares SEMANTICS with task/snip
+ * (chips via the shared session-filter). READ-ONLY projection of plan-mode plus
+ * a USER-ONLY approve/revise/off door (control-file bridge). Steps render as a
+ * checklist like task rows (engine v1.4.62 puts steps intact into the payload).
+ * The plan auto-closes when all steps are done (mode "complete").
  */
 export function PlanPanel(props: PluginWorkspacePanelProps) {
   const c = props.theme.colors;
@@ -26,7 +26,7 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
     try {
       setData(await read({ workspaceId: props.workspaceId, sessionId: picked }));
     } catch {
-      // RPC hiccup — giữ snapshot cũ, poll sau sẽ thử lại
+      // RPC hiccup — keep the last snapshot, the next poll retries
     }
   }, [props.workspaceId, picked, read]);
 
@@ -44,20 +44,20 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
     : !data.present
       ? (data.note ?? "no session")
       : mode === "inactive"
-        ? "chưa dùng plan mode trong session này"
+        ? "plan mode not used in this session yet"
         : (data.note ?? "ok");
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: c.surface0 }} contentContainerStyle={{ padding: 8, gap: 8 }}>
-      {/* v1.0.47 (#65): trạng thái chưa có plan gọn còn MỘT caveat — trước đây header
-          dim + card rỗng + footer cùng nói "user-only/projection" 3 lần, nhìn như 2 card lặp */}
+      {/* v1.0.47 (#65): the no-plan state trimmed to ONE caveat — previously the dim
+          header + empty card + footer each said "user-only/projection" 3 times, reading like duplicate cards */}
       <OmHeader
         c={c}
         title={headerTitle}
         dim={
           !data || !data.present || mode === "inactive"
             ? [engineLine]
-            : [engineLine, steps.length > 0 ? `${data?.stepsDone ?? 0}/${steps.length} bước · ${mode}` : "chưa có plan cho session này"]
+            : [engineLine, steps.length > 0 ? `${data?.stepsDone ?? 0}/${steps.length} steps · ${mode}` : "no plan for this session yet"]
         }
       />
       <OmSessionPicker
@@ -74,22 +74,22 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
 
       {(!data || !data.present || mode === "inactive") && (data?.sessions ?? []).length === 0 ? (
         <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>
-          chưa có session nào có plan status trong workspace này — picker sẽ có chip sau khi plan engine chạy lần đầu
+          no session in this workspace has a plan status yet — the picker gets chips after the plan engine first runs
         </Text>
       ) : null}
 
-      {/* v1.0.48 (#65/#67): card rỗng "PLAN" gộp vào header dim ở trên — một card duy nhất. */}
+      {/* v1.0.48 (#65/#67): the empty "PLAN" card merged into the dim header above — a single card. */}
       {data?.present && mode !== "inactive" && mode !== undefined ? (
         <OmCard c={c}>
           <OmSection c={c}>
             PLAN —{" "}
             {mode === "awaiting"
-              ? "CHỜ USER DUYỆT"
+              ? "AWAITING USER APPROVAL"
               : mode === "tracking"
-                ? "ĐANG THEO DÕI"
+                ? "TRACKING"
                 : mode === "complete"
-                  ? "HOÀN THÀNH"
-                  : "ĐANG VIẾT"}
+                  ? "COMPLETE"
+                  : "DRAFTING"}
           </OmSection>
           <View style={{ gap: 4 }}>
             {(() => {
@@ -105,12 +105,12 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
                     }}
                   >
                     {mode === "awaiting"
-                      ? "model đã nộp plan — chờ bạn duyệt (approve) hoặc bảo sửa lại (revise)"
+                      ? "the model has submitted a plan — waiting for you to approve or ask for a revision"
                       : mode === "tracking"
-                        ? `đang thực thi: ${stepsDone}/${stepsTotal} bước`
+                        ? `executing: ${stepsDone}/${stepsTotal} steps`
                         : mode === "complete"
-                          ? `hoàn thành ${stepsDone}/${stepsTotal} bước — plan tự đóng${data?.completedAt ? ` lúc ${data.completedAt.slice(11, 16)}Z` : ""}; file giữ trong thư viện plans`
-                          : "model đang viết plan (read-only mode)"}
+                          ? `completed ${stepsDone}/${stepsTotal} steps — the plan auto-closes${data?.completedAt ? ` at ${data.completedAt.slice(11, 16)}Z` : ""}; the file stays in the plans library`
+                          : "the model is writing the plan (read-only mode)"}
                   </Text>
                   {data?.planFile ? (
                     <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>file: {data.planFile}</Text>
@@ -168,7 +168,7 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
                   marginTop: 4,
                 }}
               >
-                <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>✕ dọn panel (off)</Text>
+                <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>✕ clear panel (off)</Text>
               </Pressable>
             ) : (
               <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
@@ -179,7 +179,7 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
                     }}
                     style={{ backgroundColor: c.surface1, borderColor: c.statusSuccess, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 }}
                   >
-                    <Text style={{ color: c.statusSuccess, fontSize: 11, fontWeight: "600" }}>✓ duyệt (user)</Text>
+                    <Text style={{ color: c.statusSuccess, fontSize: 11, fontWeight: "600" }}>✓ approve (user)</Text>
                   </Pressable>
                 ) : null}
                 {mode === "awaiting" ? (
@@ -189,7 +189,7 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
                     }}
                     style={{ backgroundColor: c.surface1, borderColor: c.statusWarning, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 }}
                   >
-                    <Text style={{ color: c.statusWarning, fontSize: 11 }}>↺ sửa lại</Text>
+                    <Text style={{ color: c.statusWarning, fontSize: 11 }}>↺ revise</Text>
                   </Pressable>
                 ) : null}
                 <Pressable
@@ -198,7 +198,7 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
                   }}
                   style={{ backgroundColor: "transparent", borderColor: c.foregroundMuted, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 }}
                 >
-                  <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>✕ bỏ plan</Text>
+                  <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>✕ drop plan</Text>
                 </Pressable>
               </View>
             )}
@@ -208,7 +208,7 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
 
       {data?.present && mode !== "inactive" ? (
         <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>
-          read-only projection — plan đổi qua write_plan/plan_step_done của model · approve/revise/off là user-only
+          read-only projection — the plan changes via the model's write_plan/plan_step_done · approve/revise/off are user-only
         </Text>
       ) : null}
     </ScrollView>

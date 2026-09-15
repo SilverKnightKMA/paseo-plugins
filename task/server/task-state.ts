@@ -239,7 +239,7 @@ export async function writeTaskControl(
     action: input.action,
     id: input.id,
     ...(input.action === "strict" ? { value: input.value ?? true } : {}),
-    // v1.0.35: đề mới do USER soạn — engine ghi trail by user, không tốn ngân sách agent
+    // v1.0.35: new description written by the USER — engine logs the trail as by-user, no agent budget spent
     ...(input.action === "amend" ? { description: (input.description ?? "").trim().slice(0, 2000) } : {}),
     sentAt,
   };
@@ -249,6 +249,6 @@ export async function writeTaskControl(
   return {
     ok: true,
     sentAt,
-    note: `engine áp dụng trong ~1s — panel sẽ tự refresh (ack = engine online)`,
+    note: `engine applies within ~1s — the panel will auto-refresh (ack = engine online)`,
   };
 }

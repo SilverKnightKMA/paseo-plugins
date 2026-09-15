@@ -21,10 +21,10 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
   const [picked, setPicked] = useState<string | null>(null); // chips override
   const [hideDone, setHideDone] = useState(true); // v1.0.32: hide completed by default (user request)
   const [compact, setCompact] = useState(false); // v1.0.32: collapse descriptions to one-line rows
-  // v1.0.35: amend editor — task id đang mở ô nhập đề mới (user-only)
+  // v1.0.35: amend editor — task id whose new-description input is open (user-only)
   const [amendFor, setAmendFor] = useState<number | null>(null);
   const [amendText, setAmendText] = useState("");
-  // v1.0.40 (#37): goal draft/init — bảng duyệt scope
+  // v1.0.40 (#37): goal draft/init — scope approval board
   const goalRead = useRpc(GetGoalStateRpc);
   const goalWrite = useRpc(SetGoalControlRpc);
   const [goal, setGoal] = useState<GoalPanelState | null>(null);
@@ -60,13 +60,13 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
     completed: { glyph: "✓", color: c.statusSuccess },
     in_progress: { glyph: "▶", color: c.accent },
     pending: { glyph: "·", color: c.foregroundMuted },
-    held: { glyph: "⚖", color: c.statusWarning }, // v1.0.47 #64: judge giữ — cần evidence
+    held: { glyph: "⚖", color: c.statusWarning }, // v1.0.47 #64: judge holds — needs evidence
     cancelled: { glyph: "×", color: c.foregroundMuted },
     parked: { glyph: "⏸", color: c.statusWarning },
   };
 
   /** User-only control actions (v1.0.31): fire the control file + refresh.
-   *  v1.0.35: action "amend" gửi đề mới do user soạn (descHistory by user). */
+   *  v1.0.35: the "amend" action sends a new description written by the user (descHistory by user). */
   const sendControl = useCallback(
     async (id: number, action: "unpark" | "strict" | "reopen" | "amend", value?: boolean, description?: string) => {
       const sid = data?.sessionId;
@@ -112,21 +112,21 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
         ) : null}
         {t.status === "parked" ? (
           <Text style={{ color: c.statusWarning, fontSize: 11, paddingLeft: 20 }}>
-            parked (chờ user): {t.appealReason ?? "—"}
+            parked (awaiting user): {t.appealReason ?? "—"}
           </Text>
         ) : null}
-        {/* v1.0.35 doneCheck guard: agent từng đổi tờ đề — cảnh báo cố định + trail cũ→mới
-            (judge cũng thấy trail này; model không đổi kín được nữa) */}
+        {/* v1.0.35 doneCheck guard: the agent has changed the task description before — fixed warning + old→new trail
+            (the judge sees this trail too; the model can no longer change it silently) */}
         {t.descAmendments && t.descAmendments > 0 ? (
           <Text style={{ color: c.statusWarning, fontSize: 11, paddingLeft: 20 }}>
-            🔨 đề đã bị model sửa {t.descAmendments}/2 lần — tờ cũ vẫn được giữ
+            🔨 description changed by the model {t.descAmendments}/2 times — the old version is kept
           </Text>
         ) : null}
         {t.descHistory && t.descHistory.length > 0 && !compact ? (
           <View style={{ paddingLeft: 20, gap: 1, marginTop: 1 }}>
             {t.descHistory.map((d, i) => (
               <Text key={i} style={{ color: d.by === "user" ? c.accent : c.statusWarning, fontSize: 10, opacity: 0.9 }}>
-                {d.by === "user" ? "✎ user đổi:" : "🔨 agent đổi:"} {d.from || "(trống)"} → {d.to || "(trống)"}
+                {d.by === "user" ? "✎ user changed:" : "🔨 agent changed:"} {d.from || "(empty)"} → {d.to || "(empty)"}
               </Text>
             ))}
           </View>
@@ -147,7 +147,7 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
                 paddingVertical: 2,
               }}
             >
-              <Text style={{ color: c.statusWarning, fontSize: 11 }}>⏸ mở lại (user)</Text>
+              <Text style={{ color: c.statusWarning, fontSize: 11 }}>⏸ reopen (user)</Text>
             </Pressable>
           ) : null}
           {(t.status === "completed" || t.status === "cancelled") && !hideDone ? (
@@ -162,7 +162,7 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
                 paddingVertical: 2,
               }}
             >
-              <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>↺ mở lại (user)</Text>
+              <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>↺ reopen (user)</Text>
             </Pressable>
           ) : null}
           {t.verify ? (
@@ -182,7 +182,7 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
               </Text>
             </Pressable>
           ) : null}
-          {/* v1.0.35: sửa đề (user) — cửa duy nhất khi agent hết cap 2/2 hoặc task strict */}
+          {/* v1.0.35: amend description (user) — the only door when the agent has used up the 2/2 cap or the task is strict */}
           <Pressable
             onPress={() => {
               setAmendFor(amendFor === t.id ? null : t.id);
@@ -197,7 +197,7 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
               paddingVertical: 2,
             }}
           >
-            <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>✎ sửa đề (user)</Text>
+            <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>✎ amend description (user)</Text>
           </Pressable>
         </View>
         {amendFor === t.id ? (
@@ -205,7 +205,7 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
             <TextInput
               value={amendText}
               onChangeText={setAmendText}
-              placeholder="đề mới (doneCheck) — user soạn, engine giữ tờ cũ"
+              placeholder="new description (doneCheck) — written by the user, engine keeps the old version"
               placeholderTextColor={c.foregroundMuted}
               multiline
               style={{
@@ -231,7 +231,7 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
                 }}
                 style={{ backgroundColor: c.surface1, borderColor: c.accent, borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}
               >
-                <Text style={{ color: c.accent, fontSize: 11 }}>gửi đề mới</Text>
+                <Text style={{ color: c.accent, fontSize: 11 }}>send new description</Text>
               </Pressable>
               <Pressable
                 onPress={() => {
@@ -240,7 +240,7 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
                 }}
                 style={{ backgroundColor: "transparent", borderColor: c.foregroundMuted, borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}
               >
-                <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>hủy</Text>
+                <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>cancel</Text>
               </Pressable>
             </View>
           </View>
@@ -331,46 +331,46 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
           />
 
           <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-            {toggleChip(hideDone ? `Ẩn đã xong ✓${doneHidden ? ` (${doneHidden})` : ""}` : "Hiện đã xong", hideDone, () =>
+            {toggleChip(hideDone ? `Hide done ✓${doneHidden ? ` (${doneHidden})` : ""}` : "Show done", hideDone, () =>
               setHideDone((v) => !v),
             )}
-            {toggleChip(compact ? "Thu gọn ✓" : "Thu gọn", compact, () => setCompact((v) => !v))}
+            {toggleChip(compact ? "Compact ✓" : "Compact", compact, () => setCompact((v) => !v))}
           </View>
 
-          {/* #37 (v1.0.40): goal draft/init — bảng duyệt scope; plan đã tách
-              sang plugin riêng "plan" (v1.0.43, #62). */}
+          {/* #37 (v1.0.40): goal draft/init — scope approval board; plan was split
+              into its own "plan" plugin (v1.0.43, #62). */}
           {goal?.present && goal.status === "draft" && goal.proposal ? (
             <OmCard c={c}>
-              <OmSection c={c}>GOAL — BẢNG SCOPE CHỜ USER DUYỆT</OmSection>
+              <OmSection c={c}>GOAL — SCOPE BOARD AWAITING USER APPROVAL</OmSection>
               <View style={{ gap: 4 }}>
                 <Text style={{ color: c.foreground, fontSize: 11 }}>
-                  đích: {goal.proposal.anchor}
+                  target: {goal.proposal.anchor}
                 </Text>
                 <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>
-                  vào: {goal.proposal.includeIds.length ? goal.proposal.includeIds.map((i) => `#${i}`).join(" ") : "mọi task mở"}
-                  {goal.proposal.excludeIds.length ? ` · bỏ: ${goal.proposal.excludeIds.map((i) => `#${i}`).join(" ")}` : ""}
+                  in: {goal.proposal.includeIds.length ? goal.proposal.includeIds.map((i) => `#${i}`).join(" ") : "all open tasks"}
+                  {goal.proposal.excludeIds.length ? ` · drop: ${goal.proposal.excludeIds.map((i) => `#${i}`).join(" ")}` : ""}
                 </Text>
                 {goal.proposal.rationale ? (
-                  <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>lý do: {goal.proposal.rationale}</Text>
+                  <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>reason: {goal.proposal.rationale}</Text>
                 ) : null}
                 <View style={{ flexDirection: "row", gap: 6, marginTop: 2 }}>
                   <Pressable
                     onPress={() => { if (sessionId) void goalWrite({ workspaceId: props.workspaceId, sessionId, action: "confirm" }).then(refresh).catch(() => {}); }}
                     style={{ backgroundColor: c.surface1, borderColor: c.statusSuccess, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 }}
                   >
-                    <Text style={{ color: c.statusSuccess, fontSize: 11, fontWeight: "600" }}>✓ duyệt — chạy goal</Text>
+                    <Text style={{ color: c.statusSuccess, fontSize: 11, fontWeight: "600" }}>✓ approve — run goal</Text>
                   </Pressable>
                   <Pressable
                     onPress={() => { if (sessionId) void goalWrite({ workspaceId: props.workspaceId, sessionId, action: "revise" }).then(refresh).catch(() => {}); }}
                     style={{ backgroundColor: c.surface1, borderColor: c.statusWarning, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 }}
                   >
-                    <Text style={{ color: c.statusWarning, fontSize: 11 }}>↺ sửa lại</Text>
+                    <Text style={{ color: c.statusWarning, fontSize: 11 }}>↺ revise</Text>
                   </Pressable>
                   <Pressable
                     onPress={() => { if (sessionId) void goalWrite({ workspaceId: props.workspaceId, sessionId, action: "cancel" }).then(refresh).catch(() => {}); }}
                     style={{ backgroundColor: c.surface1, borderColor: c.statusDanger, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 }}
                   >
-                    <Text style={{ color: c.statusDanger, fontSize: 11 }}>✗ hủy</Text>
+                    <Text style={{ color: c.statusDanger, fontSize: 11 }}>✗ cancel</Text>
                   </Pressable>
                 </View>
               </View>
@@ -381,23 +381,23 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
             if (!pend.length) return null;
             return (
               <OmCard c={c}>
-                <OmSection c={c}>ĐỀ XUẤT SỬA ĐỀ ({pend.length}) — AMEND BỊ CHẶN, USER QUYẾT</OmSection>
+                <OmSection c={c}>DESCRIPTION AMENDMENT PROPOSALS ({pend.length}) — AMEND BLOCKED, USER DECIDES</OmSection>
                 {pend.map((x) => (
                   <View key={x.id} style={{ gap: 3, marginBottom: 6 }}>
                     <Text style={{ color: c.foreground, fontSize: 11 }}>#{x.task} · {x.from.slice(0, 60)} → {x.to.slice(0, 60)}</Text>
-                    {x.reason ? <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>lý do: {x.reason.slice(0, 120)}</Text> : null}
+                    {x.reason ? <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>reason: {x.reason.slice(0, 120)}</Text> : null}
                     <View style={{ flexDirection: "row", gap: 6 }}>
                       <Pressable
                         onPress={() => { if (sessionId) void write({ workspaceId: props.workspaceId, sessionId, id: x.task, action: "proposal-decide", proposalId: x.id, decision: "apply" }).then(refresh).catch(() => {}); }}
                         style={{ backgroundColor: c.surface1, borderColor: c.statusSuccess, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 }}
                       >
-                        <Text style={{ color: c.statusSuccess, fontSize: 11, fontWeight: "600" }}>✓ áp dụng (không tốn cap)</Text>
+                        <Text style={{ color: c.statusSuccess, fontSize: 11, fontWeight: "600" }}>✓ apply (no cap cost)</Text>
                       </Pressable>
                       <Pressable
                         onPress={() => { if (sessionId) void write({ workspaceId: props.workspaceId, sessionId, id: x.task, action: "proposal-decide", proposalId: x.id, decision: "reject" }).then(refresh).catch(() => {}); }}
                         style={{ backgroundColor: c.surface1, borderColor: c.statusDanger, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 }}
                       >
-                        <Text style={{ color: c.statusDanger, fontSize: 11 }}>✗ từ chối</Text>
+                        <Text style={{ color: c.statusDanger, fontSize: 11 }}>✗ reject</Text>
                       </Pressable>
                     </View>
                   </View>

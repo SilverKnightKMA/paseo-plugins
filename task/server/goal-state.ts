@@ -5,9 +5,9 @@ import type { RpcInput } from "@getpaseo/plugin";
 import { GetGoalStateRpc, SetGoalControlRpc, type GoalPanelState } from "../shared/rpc.js";
 
 /**
- * #37 (engine v1.4.52): goal projection reader + control writer — mirror của
- * plan-state.ts. Engine goal ext ghi ~/.pi/agent/goal-status/<sessionId>.json
- * và watch goal-control/<sessionId>.json (confirm/revise/cancel, user-only).
+ * #37 (engine v1.4.52): goal projection reader + control writer — mirror of
+ * plan-state.ts. The engine's goal ext writes ~/.pi/agent/goal-status/<sessionId>.json
+ * and watches goal-control/<sessionId>.json (confirm/revise/cancel, user-only).
  */
 const EMPTY: GoalPanelState = {
   present: false,
@@ -79,5 +79,5 @@ export async function writeGoalControl(
   const tmp = `${file}.tmp-${process.pid}`;
   await writeFile(tmp, JSON.stringify(payload), "utf8");
   await rename(tmp, file);
-  return { ok: true, sentAt, note: "engine áp trong ~1s — panel tự refresh qua ack" };
+  return { ok: true, sentAt, note: "engine applies within ~1s — panel auto-refreshes via ack" };
 }
