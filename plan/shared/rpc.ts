@@ -42,6 +42,8 @@ export const GetPlanStateRpc = {
     planFile: z.string().nullable(),
     submittedAt: z.string().nullable(),
     completedAt: z.string().nullable(),
+    /** v1.4.67 (#47 Phase A): full plan content (≤12KB) in awaiting mode — the USER reads + approves on the card. */
+    planText: z.string().nullish(),
     updatedAt: z.string().nullable(),
     note: z.string().nullish(),
   }),

@@ -115,6 +115,23 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
                   {data?.planFile ? (
                     <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>file: {data.planFile}</Text>
                   ) : null}
+                  {mode === "awaiting" && data?.planText ? (
+                    <View
+                      style={{
+                        marginTop: 4,
+                        borderWidth: 1,
+                        borderColor: c.surface2,
+                        borderRadius: 6,
+                        padding: 6,
+                        backgroundColor: c.surface1,
+                      }}
+                    >
+                      <Text style={{ color: c.foregroundMuted, fontSize: 9 }}>
+                        plan content — read it here, then approve:{" "}
+                      </Text>
+                      <Text style={{ color: c.foreground, fontSize: 10 }}>{data.planText}</Text>
+                    </View>
+                  ) : null}
                   {mode === "tracking" || mode === "complete" ? (
                     <View style={{ height: 4, borderRadius: 2, backgroundColor: c.surface2, overflow: "hidden" }}>
                       <View

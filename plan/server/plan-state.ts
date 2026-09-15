@@ -29,6 +29,7 @@ const EMPTY: PlanPanelState = {
   planFile: null,
   submittedAt: null,
   completedAt: null,
+  planText: null,
   updatedAt: null,
   note: null,
 };
@@ -96,6 +97,7 @@ async function readStatus(sessionId: string): Promise<PlanPanelState | null> {
       planFile: typeof p.planFile === "string" ? p.planFile : null,
       submittedAt: typeof p.submittedAt === "string" ? p.submittedAt : null,
       completedAt: typeof p.completedAt === "string" ? p.completedAt : null,
+      planText: typeof p.planText === "string" && p.planText ? p.planText : null,
       updatedAt: typeof p.updatedAt === "string" ? p.updatedAt : null,
     };
   } catch {
