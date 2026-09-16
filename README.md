@@ -7,6 +7,9 @@ Trusted, unsandboxed plugins for the Paseo daemon. Split-runtime: server part
   event tail + all-time counts (reads `~/.pi/agent/zombie-watchdog.jsonl`).
 - `om-panel` — workspace panel: observational-memory overview across all
   workspaces (sessions, topic counts, size, recency, INDEX.md head).
+- `lessons` — workspace panel: folded lessons (`~/.pi/agent/lessons.md`)
+  grouped by tag with age; timeline transformer collapses the injected
+  "Lessons from past sessions" context block into one 📚 chip (#110).
 
 ## Dev loop
 

@@ -13,22 +13,23 @@ root = pathlib.Path(__file__).parent
 spec = (root / "MARKERS.md").read_text(encoding="utf-8")
 doc = re.findall(r"Line prefix \(exact\)\s*\|\s*`([^`]+)`", spec)
 
-consumer = (root / "agent-health" / "index.client.tsx").read_text(encoding="utf-8")
-
-# prefix -> literal anchor that must exist in the consumer source
+# prefix -> (consumer file, literal anchor that must exist in that source)
 LIVE = {
-    "[auto-report] ": '"auto-report"',
-    "[channel-nack] ": '"channel-nack"',
-    '<machine-notice kind="pool-notice">': '<machine-notice kind="',
+    "[auto-report] ": ("agent-health/index.client.tsx", '"auto-report"'),
+    "[channel-nack] ": ("agent-health/index.client.tsx", '"channel-nack"'),
+    '<machine-notice kind="pool-notice">': ("agent-health/index.client.tsx", '<machine-notice kind="'),
+    "Lessons from past sessions": ("lessons/shared/parser.ts", 'LESSONS_PREFIX = "Lessons from past sessions"'),
 }
 DEPRECATED = {"> om: ", "> zw ⚠ "}
 
 fail = False
-for pfx, anchor in LIVE.items():
+for pfx, (consumer_file, anchor) in LIVE.items():
     if pfx not in doc:
         print(f"FAIL: live prefix {pfx!r} not documented in vendored MARKERS.md"); fail = True
-    elif anchor not in consumer:
-        print(f"FAIL: live prefix {pfx!r} has no consumer anchor in agent-health/index.client.tsx"); fail = True
+    else:
+        src = (root / consumer_file).read_text(encoding="utf-8")
+        if anchor not in src:
+            print(f"FAIL: live prefix {pfx!r} has no consumer anchor in {consumer_file}"); fail = True
 for pfx in DEPRECATED:
     if pfx not in doc:
         print(f"FAIL: deprecated prefix {pfx!r} missing from MARKERS.md (history-render contract)"); fail = True
