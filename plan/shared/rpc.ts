@@ -36,6 +36,12 @@ export const GetPlanStateRpc = {
     mode: z.enum(["inactive", "active", "awaiting", "tracking", "complete"]).nullable(),
     stepsDone: z.number().nullable(),
     stepsTotal: z.number().nullable(),
+    /** v1.0.55 (engine v1.4.86 #85): continuation-budget projection — the card
+     *  renders "budget 7/10 · streak 2/3 · 5 open (2 parked)" like the goal card. */
+    wakeRounds: z.number().nullable(),
+    wakeNoProgress: z.number().nullable(),
+    openSteps: z.number().nullable(),
+    parkedSteps: z.number().nullable(),
     /** v1.4.62 (#62): the full step list intact — a checklist like task rows. */
     steps: z.array(z.object({
       index: z.number(),

@@ -115,6 +115,13 @@ export function PlanPanel(props: PluginWorkspacePanelProps) {
                   {data?.planFile ? (
                     <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>file: {data.planFile}</Text>
                   ) : null}
+                  {mode === "tracking" && data?.wakeRounds != null ? (
+                    <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>
+                      budget {data.wakeRounds}/{Math.max(6, Math.min(12, 2 * (data.openSteps ?? 0)))}
+                      {data.wakeNoProgress != null && data.wakeNoProgress > 0 ? ` · streak ${data.wakeNoProgress}/3` : ""}
+                      {data.openSteps != null ? ` · ${data.openSteps} open${data.parkedSteps ? ` (${data.parkedSteps} parked)` : ""}` : ""}
+                    </Text>
+                  ) : null}
                   {mode === "awaiting" && data?.planText ? (
                     <View
                       style={{

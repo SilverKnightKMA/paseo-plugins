@@ -28,15 +28,26 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
   const goalRead = useRpc(GetGoalStateRpc);
   const goalWrite = useRpc(SetGoalControlRpc);
   const [goal, setGoal] = useState<GoalPanelState | null>(null);
+  const [goalError, setGoalError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       const next = await read({ workspaceId: props.workspaceId, sessionId: picked });
       setData(next);
       if (next.sessionId) {
-        setGoal(await goalRead({ workspaceId: props.workspaceId, sessionId: next.sessionId }).catch(() => null));
+        // #87: a failed goal read must be VISIBLE, not silently null — the
+        // approval card invisibility (2026-09-16 00:3x) hid exactly this way.
+        try {
+          const g = await goalRead({ workspaceId: props.workspaceId, sessionId: next.sessionId });
+          setGoal(g);
+          setGoalError(null);
+        } catch (e) {
+          setGoal(null);
+          setGoalError(String((e as { message?: string })?.message ?? e).slice(0, 120));
+        }
       } else {
         setGoal(null);
+        setGoalError(null);
       }
     } catch {
       // RPC hiccup — keep the last snapshot, next poll retries
@@ -249,6 +260,7 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
           <Text style={{ color: c.foregroundMuted, fontSize: 11, paddingLeft: 20 }}>
             judge rounds: {t.judgeRounds}
             {t.failStreak && t.failStreak > 0 ? ` · fail-streak ${t.failStreak}/2` : ""}
+            {t.audit?.verdict ? ` · ⚖ ${t.audit.verdict}` : ""}
           </Text>
         ) : null}
         {openBlockers.length > 0 && !compact ? (
@@ -336,6 +348,30 @@ export function TaskPanel(props: PluginWorkspacePanelProps) {
             )}
             {toggleChip(compact ? "Compact ✓" : "Compact", compact, () => setCompact((v) => !v))}
           </View>
+
+          {/* #87: goal read failures must be visible — the 00:3x invisible-card
+              incident was exactly a swallowed error. */}
+          {goalError ? (
+            <OmCard c={c}>
+              <OmSection c={c}>GOAL — READ ERROR</OmSection>
+              <Text style={{ color: c.statusWarning, fontSize: 10 }}>goal.get-state failed: {goalError}</Text>
+            </OmCard>
+          ) : null}
+
+          {/* v1.0.55 (#87): live goal summary — running/paused goals were
+              invisible on the panel entirely (only drafts got a card). */}
+          {goal?.present && (goal.status === "running" || goal.status === "paused") ? (
+            <OmCard c={c}>
+              <OmSection c={c}>GOAL — {goal.status === "running" ? "RUNNING" : "PAUSED"}</OmSection>
+              <Text style={{ color: c.foreground, fontSize: 10 }} numberOfLines={2} ellipsizeMode="tail">
+                {goal.anchor ?? "(no anchor)"}
+              </Text>
+              <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>
+                epoch {goal.epoch ?? "?"}/20 · {goal.members ?? "?"} members · lease {goal.leaseUsed ? "used" : "0/1"}
+                {goal.updatedAt ? ` · updated ${omTimeAgo(goal.updatedAt)}` : ""}
+              </Text>
+            </OmCard>
+          ) : null}
 
           {/* #37 (v1.0.40): goal draft/init — scope approval board; plan was split
               into its own "plan" plugin (v1.0.43, #62). */}

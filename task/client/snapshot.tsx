@@ -15,6 +15,9 @@ export type TaskSnapshotData = {
    *  "pending => pending" said nothing about WHAT changed; these lines are
    *  the WHAT (subject/doneCheck/blockedBy/verify/…, ~80 chars, max 6). */
   fields?: { field: string; from?: string | null; to: string }[];
+  /** v1.0.55 (#83, engine v1.4.86): judge verdict for the affected task —
+   *  renders as a ⚖ badge line; absent when no judge/audit state exists. */
+  judge?: { verdict: string | null; rounds: number; failStreak: number; summary: string };
 };
 
 const marker = {
@@ -49,6 +52,8 @@ export function TaskSnapshotCard(props: PluginTimelineItemProps<TaskSnapshotData
     parked: c.statusWarning,
   } as const;
   const hasDiff = Array.isArray(d.changes) && d.changes.length > 0 && d.tool !== "task_list";
+  const j = d.judge;
+  const jTone = !j ? null : j.verdict === "pass" ? c.statusSuccess : j.verdict === "held" || j.verdict === "fail" ? c.statusWarning : c.foregroundMuted;
 
   return (
     <View
@@ -120,6 +125,20 @@ export function TaskSnapshotCard(props: PluginTimelineItemProps<TaskSnapshotData
               {`${f.field}: ${f.from ? `${f.from} → ` : ""}${f.to}`}
             </Text>
           ))}
+        </View>
+      ) : null}
+
+      {j ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 22 }}>
+          <Text style={{ color: jTone ?? c.foregroundMuted, fontSize: 11 }}>⚖</Text>
+          <Text style={{ color: jTone ?? c.foregroundMuted, fontSize: 11, fontFamily: "monospace" }}>
+            {`judge ${j.verdict ?? "pending"}${j.rounds > 0 ? ` · round ${j.rounds}` : ""}${j.failStreak > 0 ? ` · fail-streak ${j.failStreak}/2` : ""}`}
+          </Text>
+          {j.summary ? (
+            <Text style={{ color: c.foregroundMuted, fontSize: 10, flex: 1 }} numberOfLines={1} ellipsizeMode="tail">
+              {j.summary}
+            </Text>
+          ) : null}
         </View>
       ) : null}
 

@@ -5,6 +5,7 @@ import { SubagentNoticeCard, type SubagentNoticeData } from "./client/subagent-n
 import { MachineNoticeCard } from "./client/machine-notice.js";
 import { MutedAbortCard } from "./client/muted-abort.js";
 import { SystemChip } from "./client/system-chip.js";
+import { WakeChip, type WakeChipData } from "./client/wake-chip.js";
 import { OmLogCard } from "./client/om-log.js";
 import { startZwLive } from "./client/zw-pill.js";
 
@@ -148,6 +149,13 @@ export default function contribute(client: PluginClientContext) {
           items: [{ type: "plugin" as const, kind: "system-chip", version: 1, data: { notice: "context-compacted" } }],
         };
       }
+      // v1.0.55 (#82): continuation nudges — wake/wrapped/quiescent prefixes the
+      // engine emits (MARKERS.md marker 6). Model context untouched; the human
+      // sees one compact badge line instead of a full chat-text block.
+      const wake = parseWakePrefix(trimmed);
+      if (wake) {
+        return { items: [{ type: "plugin" as const, kind: "wake-chip", version: 1, data: wake }] };
+      }
       if (trimmed.startsWith("om: ")) {
         return { items: [{ type: "plugin" as const, kind: "om-log", version: 1, data: { text: trimmed } }] };
       }
@@ -160,6 +168,18 @@ export default function contribute(client: PluginClientContext) {
     version: 1,
     schema: z.object({ notice: z.string() }),
     Component: SystemChip,
+  });
+
+  client.addTimelineRenderer({
+    kind: "wake-chip",
+    version: 1,
+    schema: z.object({
+      kind: z.enum(["wake", "wrapped", "quiescent"]),
+      owner: z.enum(["task", "plan"]),
+      label: z.string(),
+      detail: z.string().nullable(),
+    }),
+    Component: WakeChip,
   });
 
   client.addTimelineRenderer({
@@ -180,6 +200,35 @@ const SUBAGENT_RE =
 const SUBAGENT_BLOCK_RE =
   /<subagent-message from="[0-9a-f-]{36}" role="[\w-]+" kind="[\w-]+">[\s\S]*?<\/subagent-message>/g;
 const MACHINE_NOTICE_BLOCK_RE = /<machine-notice kind="[\w-]+">\n?[\s\S]*?\n?<\/machine-notice>/g;
+
+/** v1.0.55 (#82): recognize engine continuation prefixes and compact them.
+ *  \u26a1 "wake 3/10 \u2192 #32 #48" / \u23f9 "task continuation wrapped \u2014 2 in_progress \u00b7 #32 #48" / \ud83d\udca4 "plan quiescent \u2014 awaiting the user". */
+export function parseWakePrefix(text: string): WakeChipData | null {
+  const wake = /^\[(task|plan) wake (\d+)\/(\d+)\] (.*)$/.exec(text);
+  if (wake) {
+    const [, owner, rounds, budget, rest] = wake;
+    const ids = (rest.match(/#\d+/g) ?? []).slice(0, 6).join(" ");
+    const parked = /(\d+) open step-task\(s\) \((\d+) parked/.exec(rest);
+    const detail = parked
+      ? `${parked[1]} open (${parked[2]} parked)`
+      : ids || null;
+    return { kind: "wake", owner: owner as "task" | "plan", label: `${owner} wake ${rounds}/${budget}${ids ? ` \u2192 ${ids}` : ""}`, detail };
+  }
+  if (text.startsWith("[task] continuation wrapped up")) {
+    const ids = (text.match(/#\d+/g) ?? []).slice(0, 6).join(" ");
+    const reason = /wrapped up \u2014 ([^.]+)\./.exec(text)?.[1] ?? null;
+    return { kind: "wrapped", owner: "task", label: `task continuation wrapped \u2014 ${reason ?? "budget"}`, detail: ids || null };
+  }
+  if (text.startsWith("[plan] continuation wrapped up")) {
+    const reason = /wrapped up \u2014 ([^.]+)\./.exec(text)?.[1] ?? null;
+    const parked = /(\d+) parked/.exec(text)?.[1] ?? null;
+    return { kind: "wrapped", owner: "plan", label: `plan continuation wrapped \u2014 ${reason ?? "budget"}`, detail: parked ? `${parked} parked — awaiting you` : null };
+  }
+  if (text.startsWith("[plan] quiescent")) {
+    return { kind: "quiescent", owner: "plan", label: "plan quiescent \u2014 awaiting the user", detail: null };
+  }
+  return null;
+}
 
 export type MachineNoticeParsed = { kind: string; body: string };
 

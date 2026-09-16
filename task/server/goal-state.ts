@@ -13,6 +13,7 @@ const EMPTY: GoalPanelState = {
   present: false,
   goalId: null,
   status: null,
+  awaiting: null,
   anchor: null,
   epoch: null,
   members: null,
@@ -48,9 +49,13 @@ export async function readGoalState(input: RpcInput<typeof GetGoalStateRpc>): Pr
       present: true,
       goalId: typeof p.goalId === "string" ? p.goalId : null,
       status,
+      awaiting: typeof p.awaiting === "string" ? p.awaiting : null,
       anchor: typeof p.anchor === "string" ? p.anchor : null,
       epoch: typeof p.epoch === "number" ? p.epoch : null,
-      members: Array.isArray(p.members) ? (p.members as number[]).length : null,
+      // v1.0.55 (#87): the engine projection writes members as a NUMBER
+      // (count); older shapes wrote an array. Accept both — this was why the
+      // card always showed "?" members.
+      members: typeof p.members === "number" ? p.members : Array.isArray(p.members) ? (p.members as number[]).length : null,
       leaseUsed: lease && typeof lease.used === "boolean" ? lease.used : null,
       proposal:
         pr && typeof pr === "object" && typeof pr.anchor === "string"

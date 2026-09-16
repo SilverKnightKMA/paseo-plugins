@@ -66,6 +66,15 @@ export default function contribute(client: PluginClientContext) {
     }),
   );
 
+  // v1.0.55 (#83, engine v1.4.86): judge verdict chip data — present only when
+  // the task_update carried an audit/judge state (older engines fall through).
+  const snapshotJudgeSchema = z.object({
+    verdict: z.string().nullable(),
+    rounds: z.number(),
+    failStreak: z.number(),
+    summary: z.string(),
+  });
+
   client.addTimelineTransformer({
     id: "task-snapshot-transformer",
     query: { itemType: "tool_call" },
@@ -81,6 +90,7 @@ export default function contribute(client: PluginClientContext) {
       if (!tasks.success || tasks.data.length === 0) return undefined;
       const changesParsed = snapshotChangesSchema.safeParse(Reflect.get(details as Record<string, unknown>, "changes"));
       const fieldsParsed = snapshotFieldsSchema.safeParse(Reflect.get(details as Record<string, unknown>, "fields"));
+      const judgeParsed = snapshotJudgeSchema.safeParse(Reflect.get(details as Record<string, unknown>, "judge"));
       return {
         items: [
           {
@@ -92,6 +102,7 @@ export default function contribute(client: PluginClientContext) {
               tasks: tasks.data,
               ...(changesParsed.success && changesParsed.data.length > 0 ? { changes: changesParsed.data } : {}),
               ...(fieldsParsed.success && fieldsParsed.data.length > 0 ? { fields: fieldsParsed.data } : {}),
+              ...(judgeParsed.success ? { judge: judgeParsed.data } : {}),
             },
           },
         ],
@@ -107,6 +118,7 @@ export default function contribute(client: PluginClientContext) {
       tasks: snapshotTasksSchema,
       changes: snapshotChangesSchema.optional(),
       fields: snapshotFieldsSchema.optional(),
+      judge: snapshotJudgeSchema.optional(),
     }),
     Component: TaskSnapshotCard,
   });

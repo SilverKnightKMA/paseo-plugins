@@ -143,6 +143,9 @@ export const GetGoalStateRpc = {
     present: z.boolean(),
     goalId: z.string().nullable(),
     status: z.string().nullable(),
+    /** v1.0.55 (#87): what the engine is waiting on ("confirm" while a draft
+     *  holds an approved-pending proposal) — the card labels the CTA. */
+    awaiting: z.string().nullable(),
     anchor: z.string().nullable(),
     epoch: z.number().nullable(),
     members: z.number().nullable(),

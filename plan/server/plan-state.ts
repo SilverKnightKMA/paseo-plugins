@@ -24,6 +24,10 @@ const EMPTY: PlanPanelState = {
   mode: null,
   stepsDone: null,
   stepsTotal: null,
+  wakeRounds: null,
+  wakeNoProgress: null,
+  openSteps: null,
+  parkedSteps: null,
   steps: [],
   currentStep: null,
   planFile: null,
@@ -102,6 +106,12 @@ async function readStatus(sessionId: string): Promise<PlanPanelState | null> {
       mode,
       stepsDone: typeof p.stepsDone === "number" ? p.stepsDone : 0,
       stepsTotal: typeof p.stepsTotal === "number" ? p.stepsTotal : 0,
+      // v1.0.55 (#85): pass through the wake-budget projection (null on older
+      // engine payloads — the card hides the budget line when null).
+      wakeRounds: typeof p.wakeRounds === "number" ? p.wakeRounds : null,
+      wakeNoProgress: typeof p.wakeNoProgress === "number" ? p.wakeNoProgress : null,
+      openSteps: typeof p.openSteps === "number" ? p.openSteps : null,
+      parkedSteps: typeof p.parkedSteps === "number" ? p.parkedSteps : null,
       steps,
       currentStep: step,
       planFile: typeof p.planFile === "string" ? p.planFile : null,
