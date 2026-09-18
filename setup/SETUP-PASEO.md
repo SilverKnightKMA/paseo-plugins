@@ -105,18 +105,32 @@ Agent trình user: *"Session setup đã được import — mở Paseo app sẽ 
 Cùng một lệnh cho mọi provider đang bật trong daemon — chỉ đổi `--provider` (pi, omp, codex, opencode, copilot, claude…) và nguồn file session theo từng nhà cung cấp. Import trùng bị daemon tự chặn ("already imported") nên loop an toàn. Mặc định: **mọi session trừ OM worker** (các dir `.memory-*` — session nội bộ của observational-memory, import sẽ hỏi fork tương tác):
 
 ```bash
-# Mọi session pi của MỌI workspace, bỏ qua OM worker — chạy nền vì lâu (mỗi import = 1 RPC)
+# Bước 1 — build queue offline: mỗi dòng "provider<TAB>sessionId<TAB>cwd"
+# (cwd đọc từ chính JSONL — BẮT BUỘC: session thuộc workspace khác mà thiếu --cwd
+#  thì daemon hỏi "Fork this session...?" tương tác và abort khi chạy nền)
+python3 - <<'PY'
+import glob, os, re
+q = []
+for f in glob.glob(os.path.expanduser('~/.pi/agent/sessions/*/*.jsonl')):
+    if '.memory-' in f: continue          # bỏ OM worker
+    sid = re.sub(r'.*_','',os.path.basename(f)).replace('.jsonl','')
+    head = open(f,'rb').read(4000).decode('utf8','ignore')
+    m = re.search(r'"cwd":"([^"]*)"', head)
+    q.append(f"pi\t{sid}\t{m.group(1) if m else ''}")
+open(os.path.expanduser('~/bulk-import-queue.tsv'),'w').write('\n'.join(q))
+PY
+
+# Bước 2 — import có throttle, log vào ~/ (không dùng /tmp — mất khi restart)
 setsid nohup bash -c '
-for f in ~/.pi/agent/sessions/*/*.jsonl; do
-  case "$f" in *.memory-*) continue;; esac
-  ID=$(basename "$f" | sed "s/.*_//; s/\.jsonl//")
-  paseo import "$ID" --provider pi 2>&1 | grep -q created && echo "imported $ID"
-done
-echo BULK-DONE' > /tmp/bulk-import.log 2>&1 &
-tail /tmp/bulk-import.log   # theo dõi tiến độ
+while IFS=$'"'"'\t'"'"' read -r PROV ID CWD; do
+  paseo import "$ID" --provider "$PROV" ${CWD:+--cwd "$CWD"} 2>&1 | grep -qE "created|already" || echo "ERR $ID"
+  sleep 1
+done < ~/bulk-import-queue.tsv
+echo BULK-DONE' > ~/bulk-import.log 2>&1 &
+tail ~/bulk-import.log   # theo dõi
 ```
 
-Lưu ý (verify trên store 1617 session): chậm — hàng nghìn file mất nhiều phút, chạy nền theo mẫu trên; mọi bản import hiện thành agent active trong app (list sẽ dài — chấp nhận là tradeoff, dọn từng cái bằng `paseo archive <agentId>` khi cần).
+Lưu ý (verify trên store thật 2600 session): mỗi import là 1 RPC — throttle `sleep 1` để daemon không đơ (đã bẻ container một lần khi chạy dồn dập); session có cwd đã bị xóa (vd `/tmp/...` test cũ) sẽ ERR — bỏ qua được; mọi import hiện thành agent active trong app (list dài là tradeoff đã chấp nhận, dọn bằng `paseo archive <agentId>`).
 
 ---
 
