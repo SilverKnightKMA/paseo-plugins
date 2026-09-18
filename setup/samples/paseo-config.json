@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "daemon": {
+    "listen": "127.0.0.1:6767",
+    "mcp": {
+      "injectIntoAgents": true
+    },
+    "browserTools": {
+      "enabled": true
+    },
+    "autoArchiveAfterMerge": false,
+    "enableTerminalAgentHooks": true,
+    "appendSystemPrompt": "",
+    "terminalProfiles": [
+      {
+        "id": "profile-tmux",
+        "name": "tmux",
+        "command": "tmux",
+        "args": [
+          "new"
+        ]
+      },
+      {
+        "id": "claude",
+        "name": "Claude Code",
+        "command": "claude",
+        "icon": "claude"
+      },
+      {
+        "id": "codex",
+        "name": "Codex",
+        "command": "codex",
+        "icon": "codex"
+      },
+      {
+        "id": "opencode",
+        "name": "OpenCode",
+        "command": "opencode",
+        "icon": "opencode"
+      }
+    ],
+    "cors": {
+      "allowedOrigins": [
+        "https://app.paseo.sh"
+      ]
+    },
+    "relay": {
+      "enabled": true,
+      "endpoint": "<YOUR-RELAY-HOST>:443",
+      "publicEndpoint": "<YOUR-RELAY-HOST>:443",
+      "useTls": true
+    }
+  },
+  "app": {
+    "baseUrl": "https://app.paseo.sh"
+  },
+  "pluginsEnabled": true,
+  "plugins": {}
+}

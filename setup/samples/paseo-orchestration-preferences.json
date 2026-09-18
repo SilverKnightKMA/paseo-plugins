@@ -1,0 +1,13 @@
+{
+  "providers": {
+    "impl": "<PROVIDER>/<IMPLEMENTATION-MODEL>",
+    "ui": "<PROVIDER>/<UI-MODEL>",
+    "research": "<PROVIDER>/<RESEARCH-MODEL>",
+    "planning": "<PROVIDER>/<PLANNING-MODEL>",
+    "audit": "<PROVIDER>/<AUDIT-MODEL>"
+  },
+  "preferences": [
+    "Use <IMPLEMENTATION-MODEL> for implementation, research, and audit tasks.",
+    "Use <UI-MODEL> for planning, UI, and tasks requiring nuanced judgment."
+  ]
+}

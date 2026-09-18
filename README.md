@@ -1,5 +1,7 @@
 # Paseo plugins (local prototypes)
 
+> **⚠️ Fresh install / hệ 2 repo:** repo này đơn lẻ KHÔNG chạy được — plugin render dữ liệu do extension bên [`pi-config`](https://github.com/SilverKnightKMA/pi-config) sinh ra. Cài từ đầu trên máy mới (Linux/macOS/Windows native): đọc [`setup/SETUP-PASEO.md`](setup/SETUP-PASEO.md) sau khi đã xong [`setup/SETUP-PI.md`](https://github.com/SilverKnightKMA/pi-config/blob/main/setup/SETUP-PI.md) — thiếu một trong hai là hệ không hoạt động.
+
 Trusted, unsandboxed plugins for the Paseo daemon. Split-runtime: server part
 (`index.ts`) runs in the daemon, client part (`*.client.tsx`) runs in the app.
 
