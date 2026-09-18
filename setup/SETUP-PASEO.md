@@ -84,6 +84,22 @@ Lệnh in **QR code + join link** của daemon. Agent trình lại cho user theo
 
 Nếu user kết nối từ máy khác qua relay: link mang public endpoint của relay — gửi link đó, user dán vào app ở bất kỳ đâu.
 
+## 7. Import session setup này vào Paseo
+
+Session pi đang chạy hướng dẫn này KHÔNG tự hiện trong Paseo app (chạy từ terminal). Import nó để user thấy toàn bộ lịch sử setup trong app:
+
+```bash
+# 1. Tìm session id pi mới nhất của workspace đang chạy
+#    (thư mục session = cwd bị slug hóa: /home/you/workspaces/foo -> --home-you-workspaces-foo--)
+ls -t ~/.pi/agent/sessions/ | head -5
+# 2. Vào thư mục khớp cwd, file mới nhất có dạng <timestamp>_<sessionId>.jsonl
+SESSION_ID=$(basename "$(ls -t <thư-mục-session>/*.jsonl | head -1)" | sed 's/.*_//; s/\.jsonl//')
+# 3. Import (đã verify: tạo agent entry hiện trong app; chạy 2 lần không sao — daemon tự chặn trùng)
+paseo import "$SESSION_ID" --provider pi
+```
+
+Agent trình user: *"Session setup đã được import — mở Paseo app sẽ thấy toàn bộ quá trình cài đặt như một agent bình thường."* Nếu import nhầm session, dọn bằng `paseo archive <agentId>`.
+
 ---
 
 ## Migrate Paseo state từ máy cũ (optional, không nằm trong repo)
