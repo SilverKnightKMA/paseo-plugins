@@ -102,20 +102,21 @@ Agent trình user: *"Session setup đã được import — mở Paseo app sẽ 
 
 ### Import hàng loạt / provider khác (optional)
 
-Cùng một lệnh cho mọi provider đang bật trong daemon — chỉ đổi `--provider` (pi, omp, codex, opencode, copilot, claude…) và nguồn file session theo từng nhà cung cấp. Import trùng bị daemon tự chặn ("already imported") nên loop an toàn:
+Cùng một lệnh cho mọi provider đang bật trong daemon — chỉ đổi `--provider` (pi, omp, codex, opencode, copilot, claude…) và nguồn file session theo từng nhà cung cấp. Import trùng bị daemon tự chặn ("already imported") nên loop an toàn. Mặc định: **mọi session trừ OM worker** (các dir `.memory-*` — session nội bộ của observational-memory, import sẽ hỏi fork tương tác):
 
 ```bash
-# Ví dụ: mọi session pi của MỘT workspace (thay dir theo cwd bạn chạy setup)
-for f in ~/.pi/agent/sessions/<dir-workspace>/*.jsonl; do
-  ID=$(basename "$f" | sed 's/.*_//; s/\.jsonl//')
+# Mọi session pi của MỌI workspace, bỏ qua OM worker — chạy nền vì lâu (mỗi import = 1 RPC)
+setsid nohup bash -c '
+for f in ~/.pi/agent/sessions/*/*.jsonl; do
+  case "$f" in *.memory-*) continue;; esac
+  ID=$(basename "$f" | sed "s/.*_//; s/\.jsonl//")
   paseo import "$ID" --provider pi 2>&1 | grep -q created && echo "imported $ID"
 done
+echo BULK-DONE' > /tmp/bulk-import.log 2>&1 &
+tail /tmp/bulk-import.log   # theo dõi tiến độ
 ```
 
-Ba lưu ý (đã verify trên store 1617 session):
-1. **Chậm** — mỗi lần import là một RPC daemon; full-store hàng nghìn file mất nhiều phút. Nên lọc theo workspace/khoảng thời gian.
-2. **Session thuộc project khác** (vd worker `.memory-*`) sẽ hỏi "Fork this session into current directory?" tương tác — loop nên skip các dir dạng đó (hoặc chạy trong đúng cwd của project đó).
-3. **Mọi bản import hiện thành agent active trong app** — import toàn bộ store cũ sẽ làm list agent phình to; cân nhắc chỉ import những session cần xem lại.
+Lưu ý (verify trên store 1617 session): chậm — hàng nghìn file mất nhiều phút, chạy nền theo mẫu trên; mọi bản import hiện thành agent active trong app (list sẽ dài — chấp nhận là tradeoff, dọn từng cái bằng `paseo archive <agentId>` khi cần).
 
 ---
 
