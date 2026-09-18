@@ -110,9 +110,22 @@ Cùng một lệnh cho mọi provider đang bật trong daemon — chỉ đổi 
 #  thì daemon hỏi "Fork this session...?" tương tác và abort khi chạy nền)
 python3 - <<'PY'
 import glob, os, re
+from collections import Counter
+# BỎ judge/one-shot: session `pi -p` chạy một lần (task judge, probe nhanh) có chữ ký
+# cấu trúc ĐÚNG 6 record: {session:1, model_change:1, thinking_level_change:1,
+# message:2, custom_message:1} — lọc theo kiểu record + số lượng, không grep nội dung
+ONE_SHOT = {'session':1,'model_change':1,'thinking_level_change':1,'message':2,'custom_message':1}
+def is_one_shot(f):
+    c = Counter()
+    with open(f) as fh:
+        for line in fh:
+            try: c[json.loads(line).get('type')] += 1
+            except: return False
+    return dict(c) == ONE_SHOT
 q = []
 for f in glob.glob(os.path.expanduser('~/.pi/agent/sessions/*/*.jsonl')):
     if '.memory-' in f: continue          # bỏ OM worker
+    if is_one_shot(f): continue           # bỏ judge/one-shot
     sid = re.sub(r'.*_','',os.path.basename(f)).replace('.jsonl','')
     head = open(f,'rb').read(4000).decode('utf8','ignore')
     m = re.search(r'"cwd":"([^"]*)"', head)
