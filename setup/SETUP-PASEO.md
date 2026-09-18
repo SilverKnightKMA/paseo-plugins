@@ -100,6 +100,23 @@ paseo import "$SESSION_ID" --provider pi
 
 Agent trình user: *"Session setup đã được import — mở Paseo app sẽ thấy toàn bộ quá trình cài đặt như một agent bình thường."* Nếu import nhầm session, dọn bằng `paseo archive <agentId>`.
 
+### Import hàng loạt / provider khác (optional)
+
+Cùng một lệnh cho mọi provider đang bật trong daemon — chỉ đổi `--provider` (pi, omp, codex, opencode, copilot, claude…) và nguồn file session theo từng nhà cung cấp. Import trùng bị daemon tự chặn ("already imported") nên loop an toàn:
+
+```bash
+# Ví dụ: mọi session pi của MỘT workspace (thay dir theo cwd bạn chạy setup)
+for f in ~/.pi/agent/sessions/<dir-workspace>/*.jsonl; do
+  ID=$(basename "$f" | sed 's/.*_//; s/\.jsonl//')
+  paseo import "$ID" --provider pi 2>&1 | grep -q created && echo "imported $ID"
+done
+```
+
+Ba lưu ý (đã verify trên store 1617 session):
+1. **Chậm** — mỗi lần import là một RPC daemon; full-store hàng nghìn file mất nhiều phút. Nên lọc theo workspace/khoảng thời gian.
+2. **Session thuộc project khác** (vd worker `.memory-*`) sẽ hỏi "Fork this session into current directory?" tương tác — loop nên skip các dir dạng đó (hoặc chạy trong đúng cwd của project đó).
+3. **Mọi bản import hiện thành agent active trong app** — import toàn bộ store cũ sẽ làm list agent phình to; cân nhắc chỉ import những session cần xem lại.
+
 ---
 
 ## Migrate Paseo state từ máy cũ (optional, không nằm trong repo)
