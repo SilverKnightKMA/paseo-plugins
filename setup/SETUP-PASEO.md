@@ -48,7 +48,7 @@ paseo plugin add SilverKnightKMA/paseo-plugins:lessons --ref v1.0.57
 
 | File đích | Nguồn sample | Ghi chú |
 |---|---|---|
-| `~/.paseo/config.json` | `setup/samples/paseo-config.json` | **MERGE, không ghi đè**: giữ nguyên khối `plugins` daemon vừa tự ghi ở bước 3. Relay là tùy chọn — truy cập app từ ngoài LAN thì đi qua relay tự host, chỉ dùng local thì bỏ hẳn khối `relay` |
+| `~/.paseo/config.json` | `setup/samples/paseo-config.json` | **MERGE, không ghi đè**: giữ nguyên khối `plugins` daemon vừa tự ghi ở bước 3. Relay LUÔN bật — mặc định đi qua relay chính thức của Paseo (`relay.paseo.sh:443`, daemon onboard tự đặt giá trị này); nếu bạn vận hành relay riêng thì chỉ thay 2 field `endpoint`/`publicEndpoint` bằng host relay của mình |
 | `~/.paseo/orchestration-preferences.json` | `setup/samples/paseo-orchestration-preferences.json` | Điền `<PROVIDER>/<MODEL>` theo model bạn đã cấu hình bên pi (hỏi user, không tự bịa) |
 
 Sau khi sửa config: `paseo reload`.
@@ -57,7 +57,7 @@ Bảng FILL-IN:
 
 | Placeholder | Lấy từ đâu |
 |---|---|
-| `<YOUR-RELAY-HOST>:443` | Relay Paseo tự host của user (nếu có); bỏ khối relay nếu không dùng |
+| `relay.paseo.sh:443` | Giữ nguyên mặc định (relay chính thức Paseo). Chỉ thay bằng `<YOUR-RELAY-HOST>:443` khi bạn tự vận hành relay — không hardcode host riêng vào config chia sẻ công khai |
 | `<PROVIDER>/<*-MODEL>` | Model user đăng ký ở `~/.pi/agent/models.json` (phần SETUP-PI) |
 | `terminalProfiles` | Sample giữ 4 profile mẫu (tmux/claude/codex/opencode) — giữ những CLI thật có trên máy, thêm profile tùy ý |
 

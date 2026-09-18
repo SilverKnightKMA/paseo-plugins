@@ -46,8 +46,8 @@
     },
     "relay": {
       "enabled": true,
-      "endpoint": "<YOUR-RELAY-HOST>:443",
-      "publicEndpoint": "<YOUR-RELAY-HOST>:443",
+      "endpoint": "relay.paseo.sh:443",
+      "publicEndpoint": "relay.paseo.sh:443",
       "useTls": true
     }
   },
