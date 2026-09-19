@@ -109,11 +109,20 @@ Cùng một lệnh cho mọi provider đang bật trong daemon — chỉ đổi 
 # (cwd đọc từ chính JSONL — BẮT BUỘC: session thuộc workspace khác mà thiếu --cwd
 #  thì daemon hỏi "Fork this session...?" tương tác và abort khi chạy nền)
 python3 - <<'PY'
-import glob, os, re
+import glob, os, re, json
 from collections import Counter
-# BỎ judge/one-shot: session `pi -p` chạy một lần (task judge, probe nhanh) có chữ ký
-# cấu trúc ĐÚNG 6 record: {session:1, model_change:1, thinking_level_change:1,
-# message:2, custom_message:1} — lọc theo kiểu record + số lượng, không grep nội dung
+# BỎ judge/one-shot — TIN HIỆU HẠNG NHẤT (pi-config v1.4.101+): mọi lần spawn judge
+# GHI 1 dòng registry ~/.pi/agent/judge-sessions.jsonl {ts,cwd,path} và pin
+# session vào subdir --judge--. Filter đọc registry + bỏ cả subdir đó; KHÔNG
+# dò đoán nội dung. Fingerprint 6-record bên dưới CHỈ là fallback cho judge
+# sinh TRƯỚC v1.4.101 (máy cũ chưa có registry).
+REG = os.path.expanduser('~/.pi/agent/judge-sessions.jsonl')
+judge_paths = set()
+try:
+    for line in open(REG):
+        try: judge_paths.add(json.loads(line)['path'])
+        except: pass
+except FileNotFoundError: pass
 ONE_SHOT = {'session':1,'model_change':1,'thinking_level_change':1,'message':2,'custom_message':1}
 def is_one_shot(f):
     c = Counter()
@@ -125,7 +134,8 @@ def is_one_shot(f):
 q = []
 for f in glob.glob(os.path.expanduser('~/.pi/agent/sessions/*/*.jsonl')):
     if '.memory-' in f: continue          # bỏ OM worker
-    if is_one_shot(f): continue           # bỏ judge/one-shot
+    if '/--judge--/' in f or f in judge_paths: continue   # bỏ judge (registry v1.4.101+)
+    if is_one_shot(f): continue           # fallback: judge cũ pre-v1.4.101
     sid = re.sub(r'.*_','',os.path.basename(f)).replace('.jsonl','')
     head = open(f,'rb').read(4000).decode('utf8','ignore')
     m = re.search(r'"cwd":"([^"]*)"', head)
