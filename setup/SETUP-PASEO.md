@@ -102,6 +102,16 @@ Agent trình user: *"Session setup đã được import — mở Paseo app sẽ 
 
 ### Import hàng loạt / provider khác (optional)
 
+**Subagent hiện tại KHÔNG cần import** — `spawn_subagent` luôn đi qua
+`paseo_create_agent` nên child được đăng ký live với labels
+`subagent.role`/`subagent.parent` ngay từ lúc spawn. Session subagent chỉ
+sót lại trên đĩa khi thuộc thời spawn trực tiếp cũ (pre-MCP): user-message
+ĐẦU TIÊN là role prompt (vd `"You are a research specialist. Given a
+question or topic, conduct..."`). Xử lý (theo chỉ thị user 2026-09-19):
+import bình thường + `--label subagent.role=researcher` rồi ARCHIVE NGAY
+qua MCP `paseo_archive_agent` để khỏi nhìn thấy trong list chính (CLI
+`paseo archive` không với tới agent closed — lỗi "Agent not found" đã verify).
+
 Cùng một lệnh cho mọi provider đang bật trong daemon — chỉ đổi `--provider` (pi, omp, codex, opencode, copilot, claude…) và nguồn file session theo từng nhà cung cấp. Import trùng bị daemon tự chặn ("already imported") nên loop an toàn. Mặc định: **mọi session trừ OM worker** (các dir `.memory-*` — session nội bộ của observational-memory, import sẽ hỏi fork tương tác):
 
 ```bash
