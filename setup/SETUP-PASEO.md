@@ -102,15 +102,17 @@ Agent trình user: *"Session setup đã được import — mở Paseo app sẽ 
 
 ### Import hàng loạt / provider khác (optional)
 
-**Subagent hiện tại KHÔNG cần import** — `spawn_subagent` luôn đi qua
-`paseo_create_agent` nên child được đăng ký live với labels
-`subagent.role`/`subagent.parent` ngay từ lúc spawn. Session subagent chỉ
-sót lại trên đĩa khi thuộc thời spawn trực tiếp cũ (pre-MCP): user-message
-ĐẦU TIÊN là role prompt (vd `"You are a research specialist. Given a
-question or topic, conduct..."`). Xử lý (theo chỉ thị user 2026-09-19):
-import bình thường + `--label subagent.role=researcher` rồi ARCHIVE NGAY
-qua MCP `paseo_archive_agent` để khỏi nhìn thấy trong list chính (CLI
-`paseo archive` không với tới agent closed — lỗi "Agent not found" đã verify).
+**Nguyên tắc subagent (chỉ thị user 2026-09-19): subagent chưa import thì
+PHẢI import rồi archive ngay — KHÔNG loại bỏ.** Subagent hiện tại KHÔNG bao
+giờ sót: `spawn_subagent` luôn đi qua `paseo_create_agent` nên child được
+đăng ký live với labels `subagent.role`/`subagent.parent` ngay từ lúc spawn.
+Session subagent chỉ sót trên đĩa khi thuộc thời spawn trực tiếp cũ (pre-MCP):
+user-message ĐẦU TIÊN là role prompt (vd `"You are a research specialist...
+"`) hoặc có delimiter `\n---\nTASK:\n`. Xử lý: import + `--label
+subagent.role=<role>` rồi ARCHIVE NGAY qua MCP `paseo_archive_agent` để
+khỏi nhìn thấy trong list chính (CLI `paseo archive` không với tới agent
+closed — lỗi "Agent not found" đã verify). Đã verify: 106 researcher cũ
+import+label+archive 106/106.
 
 Cùng một lệnh cho mọi provider đang bật trong daemon — chỉ đổi `--provider` (pi, omp, codex, opencode, copilot, claude…) và nguồn file session theo từng nhà cung cấp. Import trùng bị daemon tự chặn ("already imported") nên loop an toàn. Mặc định: **mọi session trừ OM worker** (các dir `.memory-*` — session nội bộ của observational-memory, import sẽ hỏi fork tương tác):
 
@@ -134,13 +136,20 @@ try:
         except: pass
 except FileNotFoundError: pass
 ONE_SHOT = {'session':1,'model_change':1,'thinking_level_change':1,'message':2,'custom_message':1}
+# Biến thể mở rộng (2026-09-19): judge verifier + probe `pi -p` rác cũng có core
+# {session:1, model_change:1, thinking_level_change:1, message:2} KHÔNG kèm
+# custom_message (11 judge verifier + 12 probe pi/omp đã trượt rule cũ)
 def is_one_shot(f):
     c = Counter()
     with open(f) as fh:
         for line in fh:
             try: c[json.loads(line).get('type')] += 1
             except: return False
-    return dict(c) == ONE_SHOT
+    d = dict(c)
+    if set(d) - {'session','model_change','thinking_level_change','message','custom_message'}: return False
+    return (d.get('session')==1 and d.get('model_change')==1
+            and d.get('thinking_level_change')==1 and d.get('message')==2
+            and d.get('custom_message',0) in (0,1))
 q = []
 for f in glob.glob(os.path.expanduser('~/.pi/agent/sessions/*/*.jsonl')):
     if '.memory-' in f: continue          # bỏ OM worker
