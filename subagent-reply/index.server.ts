@@ -17,10 +17,15 @@
  */
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import type { PluginCleanup } from "@getpaseo/plugin";
-import type { PaseoApi } from "@getpaseo/client";
 import { TokenRegistry } from "./server/tokens.js";
 import { listenReplyServer, type ReplyServerHandle } from "./server/mcp-server.js";
 import { registerSubagentReplyHook } from "./server/hooks.js";
+
+/** Structural slice of the SDK API the door needs (avoids importing
+ *  @getpaseo/client, which is not a plugin-SDK specifier). */
+interface PaseoSendSlice {
+  agents: { ref(id: string): { send(text: string): Promise<void> } };
+}
 
 export default function contribute(server: PluginServerContext): PluginCleanup {
   const registry = new TokenRegistry();
@@ -30,8 +35,8 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   // event contexts do. Delivery can only happen after some lifecycle context
   // has been observed (a child must have been created to call the door), so
   // capturing lazily is safe by ordering.
-  let paseoApi: PaseoApi | null = null;
-  const capturePaseo = (api: PaseoApi): void => {
+  let paseoApi: PaseoSendSlice | null = null;
+  const capturePaseo = (api: PaseoSendSlice): void => {
     paseoApi ??= api;
   };
 
