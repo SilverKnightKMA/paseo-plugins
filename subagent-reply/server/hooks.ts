@@ -99,6 +99,13 @@ export function rewriteChildConfig(input: AgentCreateInput, rt: SubagentReplyRun
 export function registerSubagentReplyHook(server: PluginServerContext, rt: SubagentReplyRuntime): () => void {
   return server.before("agent.create", (input) => {
     const request = input.request as unknown as AgentCreateInput;
+    // Permanent observability (plan step 1 / G1, 2026-09-20): one line per
+    // hook fire so MAIN-agent creates (no parent env) are visible in plugin
+    // logs too — not only the child rewrites.
+    const isChild = PARENT_ENV in (request.env ?? {});
+    rt.log(
+      `[subagent-reply] agent.create hook: title='${request.config.title ?? "(untitled)"}' provider=${request.config.provider} child=${isChild ? "yes" : "no"}`,
+    );
     const rewritten = rewriteChildConfig(request, rt);
     if (rewritten === request) return undefined; // unchanged: regular agent
     return rewritten as unknown as typeof input.request;
