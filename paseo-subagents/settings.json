@@ -3,7 +3,7 @@
   "roles": {
     "scout": { "provider": "pi", "config": "scout", "model": "fci/deepseek-v4-flash", "thinking": "low" },
     "researcher": { "provider": "pi", "config": "researcher", "model": "fci/deepseek-v4-flash", "thinking": "medium" },
-    "worker": { "provider": "codex", "config": "review", "model": "gpt-5.6-sol", "thinking": "medium" },
+    "worker": { "provider": "codex", "config": "full", "model": "gpt-5.6-sol", "thinking": "medium" },
     "mermaid-maker": { "provider": "pi", "config": "mermaid-maker", "model": "fci/deepseek-v4-flash", "thinking": "low" },
     "svg-maker": { "provider": "pi", "config": "svg-maker", "model": "fci/deepseek-v4-flash", "thinking": "low" }
   },
