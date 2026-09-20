@@ -18,6 +18,9 @@ const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"] a
 
 const SERVER_INFO = { name: "paseo-subagents", version: "1.0.0" } as const;
 
+import type { PoolItem } from "./pool";
+import { validatePoolArgs } from "./pool";
+
 const SERVER_INSTRUCTIONS =
   "Scoped reply door: you may ONLY talk to the main agent that spawned you. " +
   "Use reply_to_parent for final reports, findings, questions and blocking decisions.";
@@ -58,6 +61,37 @@ export const SPAWN_TOOL = {
   },
 };
 
+/** spawn_pool — fan-out 2-12 children, ≤4 song song (#145 / plan step 10). */
+export const POOL_TOOL = {
+  name: "spawn_pool",
+  description:
+    "Spawn 2-12 role-typed subagents in bounded parallel (default 4 at a time). DETACH by design: " +
+    "returns {poolId, spawned} immediately. When every child has finished, ONE aggregate " +
+    "[pool-report] envelope arrives (each child also reports its own [child-report]). " +
+    "Providers/models are pinned per role in the plugin repo (fail-closed on unknown roles).",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      items: {
+        type: "array" as const,
+        description: "2-12 independent, self-contained tasks.",
+        items: {
+          type: "object" as const,
+          properties: {
+            role: { type: "string" },
+            task: { type: "string" },
+            name: { type: "string" },
+          },
+          required: ["role", "task"],
+        },
+      },
+      concurrency: { type: "number", description: "Parallel children at once (1-4, default 4)." },
+    },
+    required: ["items"],
+    additionalProperties: false,
+  },
+};
+
 export interface SpawnArgs {
   role: string;
   task: string;
@@ -72,6 +106,11 @@ export interface CallerCaps {
 }
 
 export type SpawnFn = (caller: CallerCaps, args: SpawnArgs) => Promise<{ agentId: string } | { error: string }>;
+
+export type SpawnPoolFn = (
+  caller: CallerCaps,
+  args: { items: PoolItem[]; concurrency?: number },
+) => Promise<{ poolId: string; spawned: number } | { error: string }>;
 
 interface JsonRpcRequest {
   jsonrpc: "2.0";
@@ -102,6 +141,7 @@ export async function listenReplyServer(opts: {
   registry: TokenRegistry;
   deliver: DeliverFn;
   spawn?: SpawnFn;
+  spawnPool?: SpawnPoolFn;
   host?: string;
 }): Promise<ReplyServerHandle> {
   const host = opts.host ?? "127.0.0.1";
@@ -200,7 +240,7 @@ interface DispatchCtx {
   parentId: string;
   title: string;
   caps: CallerCaps;
-  opts: { registry: TokenRegistry; deliver: DeliverFn; spawn?: SpawnFn };
+  opts: { registry: TokenRegistry; deliver: DeliverFn; spawn?: SpawnFn; spawnPool?: SpawnPoolFn };
 }
 
 async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unknown> {
@@ -226,7 +266,7 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
       return { jsonrpc: "2.0", id: id, result: {} };
     case "tools/list": {
       // Lọc theo caller (spec 4.3): canSpawn=false chỉ thấy reply_to_parent.
-      const tools = ctx.caps.canSpawn ? [REPLY_TOOL, SPAWN_TOOL] : [REPLY_TOOL];
+      const tools = ctx.caps.canSpawn ? [REPLY_TOOL, SPAWN_TOOL, POOL_TOOL] : [REPLY_TOOL];
       return { jsonrpc: "2.0", id: id, result: { tools } };
     }
     case "tools/call": {
@@ -285,7 +325,37 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
           return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `spawn failed: ${reason}` }], isError: true } };
         }
       }
-      return jsonRpcError(id, -32602, `unknown tool '${String(params.name)}': this endpoint exposes ${ctx.caps.canSpawn ? "reply_to_parent, spawn_subagent" : "only reply_to_parent"}`);
+      if (params.name === POOL_TOOL.name) {
+        const spawnPool = ctx.opts.spawnPool;
+        if (!spawnPool) return jsonRpcError(id, -32601, `spawn_pool is not enabled on this door`);
+        if (!ctx.caps.canSpawn) {
+          return jsonRpcError(id, -32901, `spawn_pool refused: this caller's role cannot spawn (canSpawn=false, spec mục 6)`);
+        }
+        const args = (params.arguments ?? {}) as { items?: unknown; concurrency?: unknown };
+        const v = validatePoolArgs(args.items, args.concurrency);
+        if (!v.ok) return jsonRpcError(id, -32900, v.error);
+        try {
+          const result = await spawnPool(ctx.caps, { items: v.pool.items, concurrency: v.pool.concurrency });
+          if ("error" in result) {
+            return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `spawn_pool failed: ${result.error}` }], isError: true } };
+          }
+          return {
+            jsonrpc: "2.0",
+            id: id,
+            result: {
+              content: [{
+                type: "text",
+                text: JSON.stringify({ poolId: result.poolId, spawned: result.spawned, status: "running", note: "MỘT envelope [pool-report] aggregate sẽ tới khi mọi child terminal; từng con tự gửi [child-report] riêng (detach — spec v11 mục 3)" }),
+              }],
+              isError: false,
+            },
+          };
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `spawn_pool failed: ${reason}` }], isError: true } };
+        }
+      }
+      return jsonRpcError(id, -32602, `unknown tool '${String(params.name)}': this endpoint exposes ${ctx.caps.canSpawn ? "reply_to_parent, spawn_subagent, spawn_pool" : "only reply_to_parent"}`);
     }
     default:
       return jsonRpcError(id, -32601, `method not found: ${message.method}`);

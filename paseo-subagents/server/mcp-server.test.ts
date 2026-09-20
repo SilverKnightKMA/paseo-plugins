@@ -150,7 +150,7 @@ test("tools/list: canSpawn=false chỉ thấy reply_to_parent; main thấy cả 
     const childList = (await post(handle.port, childToken, { jsonrpc: "2.0", id: 1, method: "tools/list" })).result!.tools!;
     expect(childList.map((t) => t.name)).toEqual(["reply_to_parent"]);
     const mainList = (await post(handle.port, mainToken, { jsonrpc: "2.0", id: 2, method: "tools/list" })).result!.tools!;
-    expect(mainList.map((t) => t.name).sort()).toEqual(["reply_to_parent", "spawn_subagent"]);
+    expect(mainList.map((t) => t.name).sort()).toEqual(["reply_to_parent", "spawn_pool", "spawn_subagent"]);
   } finally {
     await handle.close();
   }

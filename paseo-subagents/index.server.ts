@@ -21,9 +21,16 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { TokenRegistry } from "./server/tokens.js";
-import { listenReplyServer, type ReplyServerHandle, type SpawnFn } from "./server/mcp-server.js";
+import { listenReplyServer, type ReplyServerHandle, type SpawnFn, type SpawnPoolFn, type CallerCaps, type SpawnArgs } from "./server/mcp-server.js";
 import { registerSubagentReplyHook, PARENT_ENV, MAIN_MCP_KEY } from "./server/hooks.js";
 import { composeInitialPrompt, resolveRole, type PluginSettings } from "./server/roles.js";
+import {
+  aggregatePoolReport,
+  allTerminal,
+  makePoolId,
+  POOL_MAX_AGE_MS,
+  scheduleBatches,
+} from "./server/pool";
 import {
   readAgentRecords,
   toIdleChildren,
@@ -141,7 +148,11 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     `[paseo-subagents] idle-archive scanner ${remindMinutes > 0 ? `armed (${remindMinutes}m, quét 60s/lần)` : "disabled (0)"}`,
   );
 
-  const spawnFn: SpawnFn = async (caller, args) => {
+  const spawnChild = async (
+    caller: CallerCaps,
+    args: SpawnArgs,
+    extraLabels?: Record<string, string>,
+  ): Promise<{ agentId: string } | { error: string }> => {
     const api = paseoApi;
     if (!api) return { error: "paseo API not captured yet — daemon lifecycle context missing" };
     if (caller.depth >= MAX_DEPTH) {
@@ -172,6 +183,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       "subagent.role": args.role,
       "subagent.depth": String(caller.depth + 1),
       "subagent.parent": parentId,
+      ...(extraLabels ?? {}),
     };
     try {
       const child = await api.agents.create({
@@ -195,6 +207,78 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     }
   };
 
+  const spawnFn: SpawnFn = (caller, args) => spawnChild(caller, args);
+
+  // ── spawn_pool (#145 / plan step 10): fan-out 2-12 children, ≤4 song song,
+  // một envelope [pool-report] aggregate khi mọi con terminal. State pool nằm
+  // trong RAM plugin process (đủ cho v1 — restart daemon mất pool đang chạy,
+  // con vẫn tự báo [child-report] riêng nên không mất dữ liệu).
+  const pools = new Map<
+    string,
+    { parentId: string; createdAt: number; childIds: string[]; titles: Map<string, string> }
+  >();
+  const spawnPoolFn: SpawnPoolFn = async (caller, args) => {
+    const poolId = makePoolId();
+    const childIds: string[] = [];
+    const titles = new Map<string, string>();
+    for (const batch of scheduleBatches(args.items, args.concurrency ?? 4)) {
+      const results = await Promise.all(
+        batch.map(async (item) => ({ item, res: await spawnChild(caller, item, { "subagent.pool": poolId }) })),
+      );
+      for (const { item, res } of results) {
+        if ("agentId" in res) {
+          childIds.push(res.agentId);
+          titles.set(res.agentId, item.name ?? `${item.role}: ${item.task.slice(0, 30)}`);
+        }
+      }
+    }
+    if (childIds.length === 0) return { error: "spawn_pool: mọi item spawn thất bại (xem log plugin)" };
+    pools.set(poolId, { parentId: caller.boundAgentId ?? "", createdAt: Date.now(), childIds, titles });
+    console.log(`[paseo-subagents] spawn_pool ${poolId}: ${childIds.length}/${args.items.length} con (parent ${caller.boundAgentId}, concurrency ${args.concurrency ?? 4})`);
+    return { poolId, spawned: childIds.length };
+  };
+
+  // Watcher pool: quét record đĩa 30s/lần; mọi con terminal (idle/error/archived)
+  // → gửi MỘT [pool-report] aggregate rồi quên pool. Pool >2h → flush partial.
+  const scanPools = async (): Promise<void> => {
+    const api = paseoApi;
+    if (!api || pools.size === 0) return;
+    let records: ReturnType<typeof readAgentRecords>;
+    try {
+      records = readAgentRecords(agentsRoot);
+    } catch {
+      return; // đĩa lỗi tạm — quét lượt sau
+    }
+    const byId = new Map(records.map((r) => [r.id, r]));
+    for (const [poolId, pool] of [...pools]) {
+      const children = pool.childIds
+        .map((id) => byId.get(id))
+        .filter((r): r is NonNullable<typeof r> => Boolean(r))
+        .map((r) => ({ id: r.id, lastStatus: r.lastStatus ?? null, archivedAt: r.archivedAt ?? null }));
+      const aged = Date.now() - pool.createdAt > POOL_MAX_AGE_MS;
+      if (!allTerminal(children) && !aged) continue;
+      if (children.length === 0) {
+        pools.delete(poolId); // record biến mất (đã delete) — không đợi nữa
+        continue;
+      }
+      const text = aggregatePoolReport(poolId, children, (c) => ({
+        label: pool.titles.get(c.id) ?? c.id,
+        state: c.archivedAt ? "archived" : (c.lastStatus ?? "unknown"),
+      })) + (aged && !allTerminal(children) ? "\n(pool vượt 2h — flush partial, các con chưa terminal sẽ tự báo [child-report] riêng)" : "");
+      pools.delete(poolId);
+      try {
+        console.log(`[paseo-subagents] pool-report ${poolId} -> parent ${pool.parentId}`);
+        await api.agents.ref(pool.parentId).send(text);
+      } catch (err) {
+        console.log(`[paseo-subagents] pool-report deliver failed (${err instanceof Error ? err.message : String(err)})`);
+      }
+    }
+  };
+  const poolTimer = setInterval(() => {
+    void scanPools();
+  }, 30_000);
+  poolTimer.unref?.();
+
   let replyServer: ReplyServerHandle | null = null;
   listenReplyServer({
     registry,
@@ -205,6 +289,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       return api.agents.ref(parentId).send(`[child-report] ${title}: ${prompt}`);
     },
     spawn: spawnFn,
+    spawnPool: spawnPoolFn,
   })
     .then((handle) => {
       replyServer = handle;
@@ -283,6 +368,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     offCreated();
     if (idleTimer) clearInterval(idleTimer);
     offTurnEnded();
+    clearInterval(poolTimer);
     replyServer?.close();
   };
 }
