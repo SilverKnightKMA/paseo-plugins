@@ -24,6 +24,13 @@ import { TokenRegistry } from "./server/tokens.js";
 import { listenReplyServer, type ReplyServerHandle, type SpawnFn } from "./server/mcp-server.js";
 import { registerSubagentReplyHook, PARENT_ENV, MAIN_MCP_KEY } from "./server/hooks.js";
 import { composeInitialPrompt, resolveRole, type PluginSettings } from "./server/roles.js";
+import {
+  readAgentRecords,
+  toIdleChildren,
+  shouldRemindIdleArchive,
+  reminderArmed,
+  DEFAULT_REMIND_MINUTES,
+} from "./server/idle-archive.js";
 
 /** Max depth tuyệt đối (spec mục 6): main=0 → con=1 → cháu=2. */
 const MAX_DEPTH = 2;
@@ -58,6 +65,59 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   };
 
   const settings: PluginSettings = {}; // repo wins: settings file sẽ được nạp ở increment sau
+
+  // ── Idle-archive reminder (#141 / plan step 7) ─────────────────────────
+  // Daemon-side port của #129: quét record đĩa mỗi 60s, nhắc parent qua
+  // đúng kênh deliver khi mọi con (label subagent.parent) idle ≥ N phút.
+  // REMIND, không auto-archive. 0 = tắt. Chỉ track con của plugin để không
+  // đôi lời với pi ext (nó tự nhắc con của nó trong process pi).
+  const remindMinutes = (() => {
+    const raw = Number(process.env.PASEO_SUBAGENTS_ARCHIVE_REMIND_MINUTES);
+    return Number.isFinite(raw) && raw >= 0 ? Math.min(Math.round(raw), 1440) : DEFAULT_REMIND_MINUTES;
+  })();
+  const lastRemindByParent = new Map<string, number>();
+  const agentsRoot = join(homedir(), ".paseo", "agents");
+
+  const scanIdleArchive = async (): Promise<void> => {
+    const api = paseoApi;
+    if (!api) return; // chưa có lifecycle context — chờ lượt quét sau
+    try {
+      const records = readAgentRecords(agentsRoot);
+      const byId = new Map(records.map((r) => [r.id, r]));
+      const parents = new Set<string>();
+      for (const r of records) {
+        const p = r.labels?.["subagent.parent"];
+        // không nhắc parent đã archive (send sẽ auto-unarchive — tránh đánh thức)
+        if (p && p !== "(main)" && !byId.get(p)?.archivedAt) parents.add(p);
+      }
+      for (const parent of parents) {
+        const children = toIdleChildren(records, parent);
+        const r = shouldRemindIdleArchive(children, Date.now(), remindMinutes);
+        if (!r) continue;
+        if (!reminderArmed(lastRemindByParent.get(parent), Date.now())) continue;
+        lastRemindByParent.set(parent, Date.now());
+        console.log(
+          `[paseo-subagents] idle-archive reminder: ${children.length} con của ${parent} idle ≥${remindMinutes}m`,
+        );
+        await api.agents.ref(parent).send(
+          `[housekeeping] ${children.length} subagents đã idle ≥${remindMinutes} phút, không con nào đang chạy/parked. Archive để giữ danh sách gọn (soft-delete — gửi tin cho con sẽ tự unarchive):\n${r.command}`,
+        );
+      }
+    } catch (err) {
+      console.log(`[paseo-subagents] idle-archive scan failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const idleTimer =
+    remindMinutes > 0
+      ? setInterval(() => {
+          void scanIdleArchive();
+        }, 60_000)
+      : null;
+  if (idleTimer) idleTimer.unref?.();
+  console.log(
+    `[paseo-subagents] idle-archive scanner ${remindMinutes > 0 ? `armed (${remindMinutes}m, quét 60s/lần)` : "disabled (0)"}`,
+  );
 
   const spawnFn: SpawnFn = async (caller, args) => {
     const api = paseoApi;
@@ -173,6 +233,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   return () => {
     offHook();
     offCreated();
+    if (idleTimer) clearInterval(idleTimer);
     replyServer?.close();
   };
 }
