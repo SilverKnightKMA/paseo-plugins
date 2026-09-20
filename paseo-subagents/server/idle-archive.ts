@@ -90,10 +90,18 @@ export function readAgentRecords(agentsRoot: string): AgentRecordLite[] {
   return out;
 }
 
-/** Lọc con của parent (label `subagent.parent`), bỏ con đã archive. */
-export function toIdleChildren(records: AgentRecordLite[], parentId: string): IdleChild[] {
+/**
+ * Lọc con của parent (label `subagent.parent`), bỏ con đã archive.
+ * spawner: chỉ nhận con do spawner này tạo (mặc định 'paseo-subagents') —
+ * pi ext children cũng có subagent.parent, thiếu lọc này sẽ đôi lời reminder.
+ */
+export function toIdleChildren(
+  records: AgentRecordLite[],
+  parentId: string,
+  spawner: string = "paseo-subagents",
+): IdleChild[] {
   return records
-    .filter((r) => r.labels?.["subagent.parent"] === parentId && !r.archivedAt)
+    .filter((r) => r.labels?.["subagent.parent"] === parentId && !r.archivedAt && r.labels?.["subagent.spawner"] === spawner)
     .map((r) => ({
       id: r.id,
       status: r.lastStatus ?? null,

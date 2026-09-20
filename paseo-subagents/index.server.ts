@@ -92,6 +92,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       const byId = new Map(records.map((r) => [r.id, r]));
       const parents = new Set<string>();
       for (const r of records) {
+        if (r.labels?.["subagent.spawner"] !== "paseo-subagents") continue;
         const p = r.labels?.["subagent.parent"];
         // không nhắc parent đã archive (send sẽ auto-unarchive — tránh đánh thức)
         if (p && p !== "(main)" && !byId.get(p)?.archivedAt) parents.add(p);
@@ -149,6 +150,10 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     const childDoorUrl = `http://127.0.0.1:${port}/mcp?caller=${token}`;
 
     const labels: Record<string, string> = {
+      // idle-archive: plugin chỉ nhắc con CHÍNH NÓ spawn — pi ext children
+      // cũng mang subagent.parent nên thiếu label này sẽ đôi lời (E2E 18:03:
+      // parent cf76ad71 nhận reminder từ cả 2 engine).
+      "subagent.spawner": "paseo-subagents",
       "subagent.role": args.role,
       "subagent.depth": String(caller.depth + 1),
       "subagent.parent": parentId,
