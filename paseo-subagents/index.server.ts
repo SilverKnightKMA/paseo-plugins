@@ -60,8 +60,14 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   // has been observed (a child must have been created to call the door), so
   // capturing lazily is safe by ordering.
   let paseoApi: PaseoSendSlice | null = null;
-  const capturePaseo = (api: PaseoSendSlice): void => {
+  let apiCapturedLogged = false;
+  const capturePaseo = (api: PaseoSendSlice, via = "unknown"): void => {
+    const first = paseoApi === null;
     paseoApi ??= api;
+    if (first && !apiCapturedLogged) {
+      apiCapturedLogged = true;
+      console.log(`[paseo-subagents] paseo api captured via ${via}`);
+    }
   };
 
   const settings: PluginSettings = {}; // repo wins: settings file sẽ được nạp ở increment sau
@@ -224,11 +230,13 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   // sau restart, nếu không có agent MỚI nào được tạo thì scanner chết ngắt
   // (E2E 17:51: reminder không nổ dù grace đã hết). Bắt thêm từ các event
   // hay gặp nhất — mọi turn kết thúc của BẤT KỲ agent nào cũng đủ.
-  const captureOnly = (event: unknown, context: { paseo?: unknown }) => {
-    if (context?.paseo) capturePaseo(context.paseo as PaseoSendSlice);
-  };
-  const offTurnEnded = server.on("agent.turn_ended" as never, captureOnly as never);
-  const offSessionOpen = server.on("agent.session_open" as never, captureOnly as never);
+  const captureOnly =
+    (via: string) =>
+    (_event: unknown, context: { paseo?: unknown }): void => {
+      if (context?.paseo) capturePaseo(context.paseo as PaseoSendSlice, via);
+    };
+  const offTurnEnded = server.on("agent.turn_ended" as never, captureOnly("turn_ended") as never);
+  const offSessionOpen = server.on("agent.session_open" as never, captureOnly("session_open") as never);
 
   const offHook = registerSubagentReplyHook(server, {
     registry,
