@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { rewriteChildConfig, MODE_ENV, PARENT_ENV, type SubagentReplyRuntime } from "./hooks.js";
 import { TokenRegistry } from "./tokens.js";
-import type { AgentSessionConfig } from "@getpaseo/protocol/agent-types";
+import type { AgentCreateConfig } from "./hooks.js";
 
 function rt(allowFull = false): SubagentReplyRuntime & { logs: string[] } {
   const logs: string[] = [];
@@ -19,7 +19,7 @@ function rtNoPort(): SubagentReplyRuntime {
   return { registry: new TokenRegistry(), getPort: () => null, allowFull: false, log: () => {} };
 }
 
-function baseConfig(overrides: Partial<AgentSessionConfig> = {}): AgentSessionConfig {
+function baseConfig(overrides: Partial<AgentCreateConfig> = {}): AgentCreateConfig {
   return { provider: "codex/gpt-5.6-luna", cwd: "/tmp", title: "scout-child", ...overrides };
 }
 

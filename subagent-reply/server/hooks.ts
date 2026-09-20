@@ -15,9 +15,19 @@
  * here (bound to an opaque token) and stripped from env.
  */
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import type { AgentSessionConfig } from "@getpaseo/protocol/agent-types";
 import type { TokenRegistry } from "./tokens.js";
 import { checkFloor, isNormalizedMode, providerFamily, translateMode } from "./mode-table.js";
+
+/** Structural slice of AgentSessionConfig the rewrite touches (avoids importing
+ *  @getpaseo/protocol, which is not a plugin-SDK specifier). The daemon's real
+ *  config is a superset — the slice is compatible by structure. */
+export interface AgentCreateConfig {
+  provider: string;
+  title?: string | null;
+  modeId?: string;
+  mcpServers?: Record<string, unknown>;
+  [key: string]: unknown;
+}
 
 export const PARENT_ENV = "PASEO_PARENT_AGENT_ID";
 export const MODE_ENV = "PASEO_CHILD_MODE";
@@ -31,7 +41,7 @@ export interface SubagentReplyRuntime {
 }
 
 export interface AgentCreateInput {
-  config: AgentSessionConfig;
+  config: AgentCreateConfig;
   env?: Record<string, string>;
 }
 
@@ -70,8 +80,8 @@ export function rewriteChildConfig(input: AgentCreateInput, rt: SubagentReplyRun
       url: `http://127.0.0.1:${port}/mcp?caller=${token}`,
       alwaysLoad: true,
     },
-  };
-  const config: AgentSessionConfig = { ...input.config, mcpServers };
+  } as Record<string, unknown>;
+  const config: AgentCreateConfig = { ...input.config, mcpServers };
 
   if (requestedRaw !== undefined) {
     const decision = translateMode(input.config.provider, requestedRaw);
@@ -87,5 +97,10 @@ export function rewriteChildConfig(input: AgentCreateInput, rt: SubagentReplyRun
 }
 
 export function registerSubagentReplyHook(server: PluginServerContext, rt: SubagentReplyRuntime): () => void {
-  return server.before("agent.create", ({ request }) => rewriteChildConfig(request as AgentCreateInput, rt));
+  return server.before("agent.create", (input) => {
+    const request = input.request as unknown as AgentCreateInput;
+    const rewritten = rewriteChildConfig(request, rt);
+    if (rewritten === request) return undefined; // unchanged: regular agent
+    return rewritten as unknown as typeof input.request;
+  });
 }
