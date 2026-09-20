@@ -1,0 +1,11 @@
+{
+  "$comment": "Repo wins (spec v6): plugin đọc file này lúc load. Mỗi role đúng MỘT provider. E2E #143: worker=codex, scout/researcher=pi.",
+  "roles": {
+    "scout": { "provider": "pi", "config": "scout", "model": "fci/deepseek-v4-flash", "thinking": "low" },
+    "researcher": { "provider": "pi", "config": "researcher", "model": "fci/deepseek-v4-flash", "thinking": "medium" },
+    "worker": { "provider": "codex", "config": "review", "model": "gpt-5.6-sol", "thinking": "medium" },
+    "mermaid-maker": { "provider": "pi", "config": "mermaid-maker", "model": "fci/deepseek-v4-flash", "thinking": "low" },
+    "svg-maker": { "provider": "pi", "config": "svg-maker", "model": "fci/deepseek-v4-flash", "thinking": "low" }
+  },
+  "poolConcurrency": 4
+}

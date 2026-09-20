@@ -70,7 +70,22 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     }
   };
 
-  const settings: PluginSettings = {}; // repo wins: settings file sẽ được nạp ở increment sau
+  // Repo wins (spec v6): settings.json trong repo plugin là source of truth,
+  // nạp 1 lần lúc load. Env PASEO_SUBAGENTS_SETTINGS chỉ đường khác nếu cần.
+  const settings: PluginSettings = (() => {
+    const p =
+      process.env.PASEO_SUBAGENTS_SETTINGS ??
+      join(homedir(), "workspaces", "paseo-plugins", "paseo-subagents", "settings.json");
+    try {
+      if (!existsSync(p)) return {};
+      const parsed = JSON.parse(readFileSync(p, "utf-8")) as PluginSettings;
+      console.log(`[paseo-subagents] settings loaded from ${p}`);
+      return parsed;
+    } catch (err) {
+      console.log(`[paseo-subagents] settings load failed (${err instanceof Error ? err.message : String(err)}) — dùng default`);
+      return {};
+    }
+  })();
 
   // ── Idle-archive reminder (#141 / plan step 7) ─────────────────────────
   // Daemon-side port của #129: quét record đĩa mỗi 60s, nhắc parent qua
