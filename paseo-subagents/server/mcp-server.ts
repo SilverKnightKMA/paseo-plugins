@@ -38,6 +38,41 @@ const REPLY_TOOL = {
   },
 };
 
+/** spawn_subagent — chỉ hiện với caller có canSpawn (spec v11 mục 4.3: lọc theo caller). */
+export const SPAWN_TOOL = {
+  name: "spawn_subagent",
+  description:
+    "Spawn a subagent with a pinned role (scout/researcher/worker/mermaid-maker/svg-maker). " +
+    "DETACH by design: returns {agentId, status:running} immediately — the child reports back " +
+    "via [child-report] when done. Provider/model/thinking are pinned in the plugin repo; " +
+    "the caller cannot override them (fail-closed on unknown roles).",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      role: { type: "string", description: "Role id — must exist in the plugin role registry." },
+      task: { type: "string", description: "Self-contained task description (the child sees nothing else)." },
+      name: { type: "string", description: "Optional display title for the child." },
+    },
+    required: ["role", "task"],
+    additionalProperties: false,
+  },
+};
+
+export interface SpawnArgs {
+  role: string;
+  task: string;
+  name?: string;
+}
+
+/** Caller capability snapshot cần cho dispatch (lấy từ CallerToken). */
+export interface CallerCaps {
+  canSpawn: boolean;
+  depth: number;
+  boundAgentId?: string;
+}
+
+export type SpawnFn = (caller: CallerCaps, args: SpawnArgs) => Promise<{ agentId: string } | { error: string }>;
+
 interface JsonRpcRequest {
   jsonrpc: "2.0";
   id?: string | number | null;
@@ -66,6 +101,7 @@ export async function startReplyServer(opts: {
 export async function listenReplyServer(opts: {
   registry: TokenRegistry;
   deliver: DeliverFn;
+  spawn?: SpawnFn;
   host?: string;
 }): Promise<ReplyServerHandle> {
   const host = opts.host ?? "127.0.0.1";
@@ -147,7 +183,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, opts:
       continue;
     }
     if (message.id === undefined || message.id === null) continue; // notification: no response
-    responses.push(await dispatch(message, caller.parentId, caller.title, opts.deliver, message.id));
+    responses.push(await dispatch(message, { parentId: caller.parentId, title: caller.title, caps: caller, opts }));
   }
 
   if (responses.length === 0) {
@@ -160,13 +196,15 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, opts:
   res.end(JSON.stringify(isBatch ? responses : responses[0]));
 }
 
-async function dispatch(
-  message: JsonRpcRequest,
-  parentId: string,
-  title: string,
-  deliver: DeliverFn,
-  id: string | number,
-): Promise<unknown> {
+interface DispatchCtx {
+  parentId: string;
+  title: string;
+  caps: CallerCaps;
+  opts: { registry: TokenRegistry; deliver: DeliverFn; spawn?: SpawnFn };
+}
+
+async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unknown> {
+  const id = message.id as string | number;
   switch (message.method) {
     case "initialize": {
       const requested = readProtocolVersion(message.params);
@@ -186,35 +224,68 @@ async function dispatch(
     }
     case "ping":
       return { jsonrpc: "2.0", id: id, result: {} };
-    case "tools/list":
-      return { jsonrpc: "2.0", id: id, result: { tools: [REPLY_TOOL] } };
+    case "tools/list": {
+      // Lọc theo caller (spec 4.3): canSpawn=false chỉ thấy reply_to_parent.
+      const tools = ctx.caps.canSpawn ? [REPLY_TOOL, SPAWN_TOOL] : [REPLY_TOOL];
+      return { jsonrpc: "2.0", id: id, result: { tools } };
+    }
     case "tools/call": {
       const params = (message.params ?? {}) as { name?: unknown; arguments?: unknown };
-      if (params.name !== REPLY_TOOL.name) {
-        return jsonRpcError(id, -32602, `unknown tool '${String(params.name)}': this endpoint exposes only reply_to_parent`);
+      if (params.name === REPLY_TOOL.name) {
+        const args = (params.arguments ?? {}) as { prompt?: unknown };
+        if (typeof args.prompt !== "string" || args.prompt.length === 0) {
+          return jsonRpcError(id, -32900, "invalid arguments: 'prompt' (non-empty string) is required");
+        }
+        try {
+          await ctx.opts.deliver(ctx.parentId, ctx.title, args.prompt);
+          return {
+            jsonrpc: "2.0",
+            id: id,
+            result: { content: [{ type: "text", text: `delivered to parent agent` }], isError: false },
+          };
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          return {
+            jsonrpc: "2.0",
+            id: id,
+            result: {
+              content: [{ type: "text", text: `delivery failed: ${reason}` }],
+              isError: true,
+            },
+          };
+        }
       }
-      const args = (params.arguments ?? {}) as { prompt?: unknown };
-      if (typeof args.prompt !== "string" || args.prompt.length === 0) {
-        return jsonRpcError(id, -32900, "invalid arguments: 'prompt' (non-empty string) is required");
+      if (params.name === SPAWN_TOOL.name) {
+        const spawn = ctx.opts.spawn;
+        if (!spawn) {
+          return jsonRpcError(id, -32601, `spawn_subagent is not enabled on this door`);
+        }
+        if (!ctx.caps.canSpawn) {
+          return jsonRpcError(id, -32901, `spawn_subagent refused: this caller's role cannot spawn (canSpawn=false, spec mục 6)`);
+        }
+        const args = (params.arguments ?? {}) as Partial<SpawnArgs>;
+        if (typeof args.role !== "string" || typeof args.task !== "string" || args.task.length === 0) {
+          return jsonRpcError(id, -32900, "invalid arguments: 'role' and 'task' (non-empty strings) are required");
+        }
+        try {
+          const result = await spawn(ctx.caps, { role: args.role, task: args.task, name: typeof args.name === "string" ? args.name : undefined });
+          if ("error" in result) {
+            return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `spawn failed: ${result.error}` }], isError: true } };
+          }
+          return {
+            jsonrpc: "2.0",
+            id: id,
+            result: {
+              content: [{ type: "text", text: JSON.stringify({ agentId: result.agentId, status: "running", note: "kết quả sẽ tới qua envelope [child-report] khi child xong (detach — spec v11 mục 3)" }) }],
+              isError: false,
+            },
+          };
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `spawn failed: ${reason}` }], isError: true } };
+        }
       }
-      try {
-        await deliver(parentId, title, args.prompt);
-        return {
-          jsonrpc: "2.0",
-          id: id,
-          result: { content: [{ type: "text", text: `delivered to parent agent` }], isError: false },
-        };
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        return {
-          jsonrpc: "2.0",
-          id: id,
-          result: {
-            content: [{ type: "text", text: `delivery failed: ${reason}` }],
-            isError: true,
-          },
-        };
-      }
+      return jsonRpcError(id, -32602, `unknown tool '${String(params.name)}': this endpoint exposes ${ctx.caps.canSpawn ? "reply_to_parent, spawn_subagent" : "only reply_to_parent"}`);
     }
     default:
       return jsonRpcError(id, -32601, `method not found: ${message.method}`);

@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { TokenRegistry } from "./tokens.js";
-import { startReplyServer, type McpRuntime } from "./mcp-server.js";
+import { startReplyServer, listenReplyServer, type McpRuntime } from "./mcp-server.js";
 
 const registry = new TokenRegistry();
 const deliveries: Array<{ parentId: string; title: string; prompt: string }> = [];
@@ -127,4 +127,99 @@ describe("scoped reply MCP server", () => {
     await rpc("tools/call", { name: "reply_to_parent", arguments: { prompt: "from first" } });
     expect(deliveries[deliveries.length - 1].parentId).toBe("parent-abc");
   });
+});
+
+// ---- spawn_subagent (spec v11: tool list lọc theo caller, detach) ----
+import type { TokenRegistry } from "./tokens.js";
+
+async function post(port: number, token: string, body: unknown): Promise<Record<string, unknown> & { result?: { tools?: { name: string }[]; content?: { text?: unknown }[]; isError?: boolean }; error?: { message: string } }> {
+  const res = await fetch(`http://127.0.0.1:${port}/mcp?caller=${token}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return (await res.json()) as never;
+}
+
+test("tools/list: canSpawn=false chỉ thấy reply_to_parent; main thấy cả spawn_subagent", async () => {
+  const registry = new TokenRegistry();
+  const childToken = registry.mint("parent-1", "child", { depth: 1, canSpawn: false });
+  const mainToken = registry.mint("(main)", "main", { depth: 0, canSpawn: true });
+  const handle = await listenReplyServer({ registry, deliver: async () => {} });
+  try {
+    const childList = (await post(handle.port, childToken, { jsonrpc: "2.0", id: 1, method: "tools/list" })).result!.tools!;
+    expect(childList.map((t) => t.name)).toEqual(["reply_to_parent"]);
+    const mainList = (await post(handle.port, mainToken, { jsonrpc: "2.0", id: 2, method: "tools/list" })).result!.tools!;
+    expect(mainList.map((t) => t.name).sort()).toEqual(["reply_to_parent", "spawn_subagent"]);
+  } finally {
+    await handle.close();
+  }
+});
+
+test("tools/call spawn_subagent: child canSpawn=false bị từ chối rõ ràng", async () => {
+  const registry = new TokenRegistry();
+  const childToken = registry.mint("parent-1", "child", { depth: 1, canSpawn: false });
+  let spawnCalls = 0;
+  const handle = await listenReplyServer({
+    registry,
+    deliver: async () => {},
+    spawn: async () => { spawnCalls++; return { agentId: "x" }; },
+  });
+  try {
+    const r = await post(handle.port, childToken, {
+      jsonrpc: "2.0", id: 3, method: "tools/call",
+      params: { name: "spawn_subagent", arguments: { role: "scout", task: "t" } },
+    });
+    expect(r.error?.message).toContain("canSpawn=false");
+    expect(spawnCalls).toBe(0);
+  } finally {
+    await handle.close();
+  }
+});
+
+test("tools/call spawn_subagent: main spawn OK, detach shape {agentId,status:running,note}", async () => {
+  const registry = new TokenRegistry();
+  const mainToken = registry.mint("(main)", "main", { depth: 0, canSpawn: true });
+  const handle = await listenReplyServer({
+    registry,
+    deliver: async () => {},
+    spawn: async (caller, args) => {
+      expect(caller.depth).toBe(0);
+      expect(args.role).toBe("scout");
+      return { agentId: "agent-xyz" };
+    },
+  });
+  try {
+    const r = await post(handle.port, mainToken, {
+      jsonrpc: "2.0", id: 4, method: "tools/call",
+      params: { name: "spawn_subagent", arguments: { role: "scout", task: "map repo" } },
+    });
+    const text = String(r.result!.content![0].text);
+    expect(text).toContain('"agentId":"agent-xyz"');
+    expect(text).toContain('"status":"running"');
+    expect(text).toContain("[child-report]");
+  } finally {
+    await handle.close();
+  }
+});
+
+test("tools/call spawn_subagent: lỗi SpawnFn (role lạ) trả isError kèm lý do", async () => {
+  const registry = new TokenRegistry();
+  const mainToken = registry.mint("(main)", "main", { depth: 0, canSpawn: true });
+  const handle = await listenReplyServer({
+    registry,
+    deliver: async () => {},
+    spawn: async () => ({ error: "unknown role 'nope' — available roles: scout" }),
+  });
+  try {
+    const r = await post(handle.port, mainToken, {
+      jsonrpc: "2.0", id: 5, method: "tools/call",
+      params: { name: "spawn_subagent", arguments: { role: "nope", task: "x" } },
+    });
+    const text = String(r.result!.content![0].text);
+    expect(r.result!.isError).toBe(true);
+    expect(text).toContain("available roles");
+  } finally {
+    await handle.close();
+  }
 });
