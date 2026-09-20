@@ -17,9 +17,12 @@
  */
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import type { PluginCleanup } from "@getpaseo/plugin";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { TokenRegistry } from "./server/tokens.js";
 import { listenReplyServer, type ReplyServerHandle, type SpawnFn } from "./server/mcp-server.js";
-import { registerSubagentReplyHook, PARENT_ENV } from "./server/hooks.js";
+import { registerSubagentReplyHook, PARENT_ENV, MAIN_MCP_KEY } from "./server/hooks.js";
 import { composeInitialPrompt, resolveRole, type PluginSettings } from "./server/roles.js";
 
 /** Max depth tuyệt đối (spec mục 6): main=0 → con=1 → cháu=2. */
@@ -31,8 +34,8 @@ interface PaseoSendSlice {
   agents: {
     ref(id: string): { send(text: string): Promise<void> };
     create(options: {
-      config: { provider: string; title?: string };
-      parent?: string;
+      config: { provider: string; title?: string; mcpServers?: Record<string, unknown> };
+      parent?: string | { id: string };
       labels?: Record<string, string>;
       prompt?: string;
       env?: Record<string, string>;
@@ -67,26 +70,38 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     const { role } = resolved;
     const title = args.name ?? `${args.role}: ${args.task.slice(0, 40)}`;
     const initialPrompt = composeInitialPrompt(role, args.task);
+
+    // SpawnFn tự mint door scoped cho child (spec 4.1): không dựa env carrier —
+    // env qua SDK agents.create không tới được hook before(agent.create) (E2E 2026-09-20: child nhận nhầm main door).
+    const parentId = caller.boundAgentId;
+    if (!parentId) {
+      return { error: "main door token chưa bind agentId (agent.created chưa về) — thử lại sau giây lát" };
+    }
+    const port = replyServer?.port ?? null;
+    if (port === null) return { error: "reply door chưa listen — thử lại sau giây lát" };
+    const token = registry.mint(parentId, title, { depth: caller.depth + 1, canSpawn: false, role: args.role });
+    const childDoorUrl = `http://127.0.0.1:${port}/mcp?caller=${token}`;
+
     const labels: Record<string, string> = {
       "subagent.role": args.role,
       "subagent.depth": String(caller.depth + 1),
-      ...(caller.boundAgentId ? { "subagent.parent": caller.boundAgentId } : {}),
-    };
-    // Env carrier: hook before(agent.create) mint door cho child (depth+1, canSpawn theo role).
-    const env: Record<string, string> = {
-      ...role.env,
-      ...(caller.boundAgentId ? { [PARENT_ENV]: caller.boundAgentId } : {}),
+      "subagent.parent": parentId,
     };
     try {
       const child = await api.agents.create({
-        config: { provider: role.providerEntry, title },
-        parent: caller.boundAgentId,
-        labels,
-        prompt: initialPrompt,
-        env,
+        config: {
+          provider: role.providerEntry,
+          title,
+          mcpServers: {
+            paseo: { type: "http" as const, url: childDoorUrl, alwaysLoad: true },
+          },
+        },
         cwd: process.cwd(), // TODO(E2E): lấy cwd của caller agent khi slice mở rộng
+        prompt: initialPrompt,
+        labels,
+        parent: parentId,
       });
-      console.log(`[paseo-subagents] spawn_subagent: role=${args.role} provider=${role.providerEntry} -> agent ${child.id} (depth ${caller.depth + 1})`);
+      console.log(`[paseo-subagents] spawn_subagent: role=${args.role} -> agent ${child.id} (parent ${parentId}, depth ${caller.depth + 1}, door scoped 1 tool)`);
       return { agentId: child.id };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
@@ -99,6 +114,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     deliver: (parentId, title, prompt) => {
       const api = paseoApi;
       if (!api) return Promise.reject(new Error("paseo API not captured yet — daemon lifecycle context missing"));
+      console.log(`[paseo-subagents] deliver [child-report] '${title}' -> parent ${parentId}`);
       return api.agents.ref(parentId).send(`[child-report] ${title}: ${prompt}`);
     },
     spawn: spawnFn,
@@ -114,13 +130,34 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       console.error(`[paseo-subagents] FAILED to listen: ${err instanceof Error ? err.message : String(err)}`);
     });
 
-  const offCreated = server.on("agent.created", (event: unknown, context: { paseo: PaseoSendSlice }) => {
+  const offCreated = server.on("agent.created", (event, context) => {
     capturePaseo(context.paseo);
-    // Bind token door → agentId cho main (main mint token TRƯỚC khi có id).
-    const record = event as { agentId?: string; config?: { mcpServers?: Record<string, { url?: string }> } };
-    if (record?.agentId && record.config?.mcpServers) {
-      const entry = record.config.mcpServers["paseo-subagents"] ?? record.config.mcpServers["paseo"];
-      if (entry?.url) registry.findByUrl(entry.url)?.token && registry.bind(new URL(entry.url).searchParams.get("caller") as string, record.agentId);
+    // Event chỉ mang metadata (PluginHookAgent không có config) — đọc record file để lấy door URL đã inject,
+    // rồi bind token → agentId (main mint token TRƯỚC khi có id — spec 4.2).
+    try {
+      const id = event.agent.id;
+      const agentsRoot = join(homedir(), ".paseo", "agents");
+      let url: string | undefined;
+      for (const ws of existsSync(agentsRoot) ? readdirSync(agentsRoot) : []) {
+        const file = join(agentsRoot, ws, `${id}.json`);
+        if (!existsSync(file)) continue;
+        const record = JSON.parse(readFileSync(file, "utf-8")) as {
+          config?: { mcpServers?: Record<string, { url?: string }> };
+        };
+        url = record.config?.mcpServers?.[MAIN_MCP_KEY]?.url ?? record.config?.mcpServers?.["paseo"]?.url;
+        break;
+      }
+      if (url) {
+        const token = new URL(url).searchParams.get("caller");
+        if (token && registry.findByUrl(url)) {
+          registry.bind(token, id);
+          console.log(`[paseo-subagents] bound main door token -> agent ${id} ('${event.agent.title ?? "untitled"}')`);
+        }
+      } else {
+        console.log(`[paseo-subagents] agent.created '${event.agent.title ?? id}': no door URL in record — bỏ bind (agent không do plugin door hóa)`);
+      }
+    } catch (err) {
+      console.log(`[paseo-subagents] bind main door failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
   const offHook = registerSubagentReplyHook(server, {

@@ -103,6 +103,9 @@ export const MAIN_MCP_KEY = "paseo-subagents";
  *  Token depth=0 canSpawn=true — main là orchestrator (spec mục 6). */
 export function injectMainDoor(input: AgentCreateInput, rt: SubagentReplyRuntime): AgentCreateInput {
   if (PARENT_ENV in (input.env ?? {})) return input; // child path xử lý riêng
+  // Plugin-spawned child mang sẵn door scoped ở key 'paseo' trong config (spawnFn mint trực tiếp) —
+  // KHÔNG inject main door (E2E 2026-09-20: child bị gán thêm canSpawn door = lỗ hổng đệ quy).
+  if ((input.config.mcpServers ?? {}) ["paseo"] !== undefined) return input;
   const port = rt.getPort();
   if (port === null) return input; // door chưa listen: main vẫn tạo bình thường (không chặn)
   const title = input.config.title ?? "main";
