@@ -1,0 +1,14 @@
+{
+  "name": "subagent-reply",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@getpaseo/plugin": "0.8.0",
+    "@types/node": "^26.5.1",
+    "typescript": "^7.0.2"
+  }
+}
