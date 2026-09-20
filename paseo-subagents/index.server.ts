@@ -220,6 +220,16 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       console.log(`[paseo-subagents] bind main door failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
+  // Scanner cần paseoApi nhưng capture lười qua agent.created là mong manh:
+  // sau restart, nếu không có agent MỚI nào được tạo thì scanner chết ngắt
+  // (E2E 17:51: reminder không nổ dù grace đã hết). Bắt thêm từ các event
+  // hay gặp nhất — mọi turn kết thúc của BẤT KỲ agent nào cũng đủ.
+  const captureOnly = (event: unknown, context: { paseo?: unknown }) => {
+    if (context?.paseo) capturePaseo(context.paseo as PaseoSendSlice);
+  };
+  const offTurnEnded = server.on("agent.turn_ended" as never, captureOnly as never);
+  const offSessionOpen = server.on("agent.session_open" as never, captureOnly as never);
+
   const offHook = registerSubagentReplyHook(server, {
     registry,
     // Port is bound on the next event-loop turn after contribute returns;
@@ -234,6 +244,8 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     offHook();
     offCreated();
     if (idleTimer) clearInterval(idleTimer);
+    offTurnEnded?.();
+    offSessionOpen?.();
     replyServer?.close();
   };
 }
