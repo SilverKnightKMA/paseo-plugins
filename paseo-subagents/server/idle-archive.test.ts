@@ -92,3 +92,16 @@ describe("reminderArmed (re-arm)", () => {
 		expect(reminderArmed(NOW - ARCHIVE_REMIND_REARM_MS - 1, NOW)).toBe(true);
 	});
 });
+
+describe("attention terminal vs waiting (#141 E2E fix)", () => {
+	test("reason finished/error → không chặn reminder (con one-shot bình thường)", () => {
+		const rs = records(3, { attentionTimestamp: new Date(NOW - 30 * 60_000).toISOString(), attentionReason: "finished" });
+		expect(shouldRemindIdleArchive(toIdleChildren(rs, "P1"), NOW, 15)).not.toBeNull();
+		const rsErr = records(3, { attentionTimestamp: new Date(NOW - 30 * 60_000).toISOString(), attentionReason: "error" });
+		expect(shouldRemindIdleArchive(toIdleChildren(rsErr, "P1"), NOW, 15)).not.toBeNull();
+	});
+	test("reason lạ/không terminal (vd 'question') → vẫn chặn (fail-closed)", () => {
+		const rs = records(3, { attentionTimestamp: new Date(NOW - 30 * 60_000).toISOString(), attentionReason: "question" });
+		expect(shouldRemindIdleArchive(toIdleChildren(rs, "P1"), NOW, 15)).toBeNull();
+	});
+});

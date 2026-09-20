@@ -24,8 +24,13 @@ export interface AgentRecordLite {
   lastStatus?: string | null;
   lastActivityAt?: string;
   attentionTimestamp?: string | null;
+  /** 'finished'/'error' = terminal (daemon enum) — không phải đang chờ parent. */
+  attentionReason?: string | null;
   archivedAt?: string | null;
 }
+
+/** Attention reasons là trạng thái TERMAL — con đã dứt, không đợi ai. */
+export const TERMINAL_ATTENTION_REASONS = new Set(["finished", "error"]);
 
 export interface IdleChild {
   id: string;
@@ -74,6 +79,7 @@ export function readAgentRecords(agentsRoot: string): AgentRecordLite[] {
           lastStatus: (typeof raw.lastStatus === "string" ? raw.lastStatus : null),
           lastActivityAt: typeof raw.lastActivityAt === "string" ? raw.lastActivityAt : undefined,
           attentionTimestamp: typeof raw.attentionTimestamp === "string" ? raw.attentionTimestamp : null,
+          attentionReason: typeof raw.attentionReason === "string" ? raw.attentionReason : null,
           archivedAt: typeof raw.archivedAt === "string" ? raw.archivedAt : null,
         });
       } catch {
@@ -92,7 +98,12 @@ export function toIdleChildren(records: AgentRecordLite[], parentId: string): Id
       id: r.id,
       status: r.lastStatus ?? null,
       lastActivityMs: parseMs(r.lastActivityAt),
-      attentionMs: parseMs(r.attentionTimestamp),
+      // Daemon dán requiresAttention='finished' lên MỌI con one-shot đã xong —
+      // đó chính là trạng thái cần archive, không phải blocker. Chỉ marker
+      // đang chờ parent (reason lạ/không terminal) mới chặn reminder.
+      attentionMs: r.attentionReason && TERMINAL_ATTENTION_REASONS.has(r.attentionReason)
+        ? null
+        : parseMs(r.attentionTimestamp),
     }));
 }
 
