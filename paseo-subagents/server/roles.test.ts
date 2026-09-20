@@ -91,3 +91,28 @@ describe("PROVIDER_CATALOGS", () => {
 		expect(PROVIDER_CATALOGS.claude.configs).toEqual(["plan", "acceptEdits", "bypassPermissions"]);
 	});
 });
+
+// modeMap: config level -> settings.modeId (E2E 18:07 lộ: modeId 'auto' mặc định,
+// config 'review' bị bỏ lặng lẽ → con codex kẹt approval)
+describe("modeMap config -> modeId", () => {
+	test("codex worker config review -> modeId auto-review", () => {
+		const r = resolveRole("worker", {
+			roles: { worker: { provider: "codex", config: "review", model: "gpt-5.6-sol" } },
+		});
+		expect(r.ok).toBe(true);
+		if (r.ok) {
+			expect(r.role.modeId).toBe("auto-review");
+			expect(r.role.providerEntry).toBe("codex/gpt-5.6-sol");
+		}
+	});
+	test("codex full -> full-access; pi role -> modeId undefined", () => {
+		const f = resolveRole("worker", { roles: { worker: { provider: "codex", config: "full", model: "m" } } });
+		expect(f.ok && f.role.modeId).toBe("full-access");
+		const p = resolveRole("scout", {});
+		expect(p.ok && p.role.modeId).toBeUndefined();
+	});
+	test("config lạ trong catalog codex mới -> fail-closed", () => {
+		const r = resolveRole("worker", { roles: { worker: { provider: "codex", config: "read-only", model: "m" } } });
+		expect(r.ok).toBe(false);
+	});
+});

@@ -36,18 +36,31 @@ export interface PluginSettings {
 }
 
 /** Catalog mức config builtin theo provider (spec mục Catalog nguồn). */
-export const PROVIDER_CATALOGS: Record<string, { configs: string[]; defaultProviderEntry: string; env?: Record<string, string> }> = {
+/**
+ * modeMap: config level → settings.modeId của daemon.
+ * Codex modeIds thật (codex-app-server-agent.js): auto | auto-review | full-access.
+ * Claude: plan | acceptEdits | bypassPermissions (best-effort, tên mode bảng provider).
+ * Pi: không cần modeId — role allowlist do ext subagent-types giữ (label subagent.role).
+ */
+export const PROVIDER_CATALOGS: Record<string, {
+	configs: string[];
+	defaultProviderEntry: string;
+	env?: Record<string, string>;
+	modeMap?: Record<string, string>;
+}> = {
 	pi: {
 		configs: ["scout", "researcher", "worker", "mermaid-maker", "svg-maker"],
 		defaultProviderEntry: "pi/cli-openai", // plugin tự map tên gọn → entry thật
 	},
 	codex: {
-		configs: ["read-only", "review", "full"],
+		configs: ["auto", "review", "full"],
 		defaultProviderEntry: "codex",
+		modeMap: { auto: "auto", review: "auto-review", full: "full-access" },
 	},
 	claude: {
 		configs: ["plan", "acceptEdits", "bypassPermissions"],
 		defaultProviderEntry: "claude",
+		modeMap: { plan: "plan", acceptEdits: "acceptEdits", bypassPermissions: "bypassPermissions" },
 		// G4 live: claude default HTTP MCP tool-call ~45s — nâng trần cho spawn/pool/ask
 		env: { MCP_TOOL_TIMEOUT: "300000" },
 	},
@@ -110,6 +123,7 @@ export interface ResolvedRole {
 	model: string | undefined;
 	thinking: string | undefined;
 	env: Record<string, string>; // facet env đi kèm provider
+	modeId: string | undefined; // config level → modeId daemon (pi: undefined)
 	channel: "user" | "append" | "replace";
 }
 
@@ -156,6 +170,7 @@ export function resolveRole(
 			model: override.model,
 			thinking: override.thinking,
 			env: { ...(facet.env ?? {}) },
+			modeId: facet.modeMap?.[override.config],
 			channel: settings.rolePromptChannel ?? "user",
 		},
 	};

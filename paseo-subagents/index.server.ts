@@ -41,7 +41,7 @@ interface PaseoSendSlice {
   agents: {
     ref(id: string): { send(text: string): Promise<void> };
     create(options: {
-      config: { provider: string; title?: string; mcpServers?: Record<string, unknown> };
+      config: { provider: string; title?: string; mcpServers?: Record<string, unknown>; modeId?: string };
       parent?: string | { id: string };
       labels?: Record<string, string>;
       prompt?: string;
@@ -177,6 +177,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       const child = await api.agents.create({
         config: {
           provider: role.providerEntry,
+          modeId: role.modeId,
           title,
           mcpServers: {
             paseo: { type: "http" as const, url: childDoorUrl, alwaysLoad: true },
