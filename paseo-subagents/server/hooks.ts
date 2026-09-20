@@ -71,7 +71,7 @@ export function rewriteChildConfig(input: AgentCreateInput, rt: SubagentReplyRun
   }
 
   const title = input.config.title ?? "subagent";
-  const token = rt.registry.mint(parentId, title);
+  const token = rt.registry.mint(parentId, title, { depth: 1, canSpawn: false });
 
   const mcpServers = {
     ...(input.config.mcpServers ?? {}),
@@ -96,6 +96,29 @@ export function rewriteChildConfig(input: AgentCreateInput, rt: SubagentReplyRun
   return { config, env };
 }
 
+/** Key MCP riêng cho main (spec 4.1): main thấy tool door BÊN CẠNH catalog daemon (G2 coexist). */
+export const MAIN_MCP_KEY = "paseo-subagents";
+
+/** Inject door spawn cho MAIN-agent create (không có PASEO_PARENT_AGENT_ID).
+ *  Token depth=0 canSpawn=true — main là orchestrator (spec mục 6). */
+export function injectMainDoor(input: AgentCreateInput, rt: SubagentReplyRuntime): AgentCreateInput {
+  if (PARENT_ENV in (input.env ?? {})) return input; // child path xử lý riêng
+  const port = rt.getPort();
+  if (port === null) return input; // door chưa listen: main vẫn tạo bình thường (không chặn)
+  const title = input.config.title ?? "main";
+  const token = rt.registry.mint("(main)", title, { depth: 0, canSpawn: true });
+  const mcpServers = {
+    ...(input.config.mcpServers ?? {}),
+    [MAIN_MCP_KEY]: {
+      type: "http" as const,
+      url: `http://127.0.0.1:${port}/mcp?caller=${token}`,
+      alwaysLoad: true,
+    },
+  } as Record<string, unknown>;
+  rt.log(`[paseo-subagents] main door injected: '${title}' provider=${input.config.provider} (canSpawn, depth 0)`);
+  return { ...input, config: { ...input.config, mcpServers } };
+}
+
 export function registerSubagentReplyHook(server: PluginServerContext, rt: SubagentReplyRuntime): () => void {
   return server.before("agent.create", (input) => {
     const request = input.request as unknown as AgentCreateInput;
@@ -106,7 +129,7 @@ export function registerSubagentReplyHook(server: PluginServerContext, rt: Subag
     rt.log(
       `[paseo-subagents] agent.create hook: title='${request.config.title ?? "(untitled)"}' provider=${request.config.provider} child=${isChild ? "yes" : "no"}`,
     );
-    const rewritten = rewriteChildConfig(request, rt);
+    const rewritten = isChild ? rewriteChildConfig(request, rt) : injectMainDoor(request, rt);
     if (rewritten === request) return undefined; // unchanged: regular agent
     return rewritten as unknown as typeof input.request;
   });
