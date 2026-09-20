@@ -15,7 +15,7 @@ const NOW = Date.parse("2026-09-20T18:00:00.000Z");
 const child = (id: string, over: Partial<Parameters<typeof toIdleChildren>[0][number]> = {}) => ({
 	id,
 	title: id,
-	labels: { "subagent.parent": "P1", "subagent.role": "scout" },
+	labels: { "subagent.parent": "P1", "subagent.role": "scout", "subagent.spawner": "paseo-subagents" },
 	lastStatus: "idle",
 	lastActivityAt: new Date(NOW - 20 * 60_000).toISOString(),
 	attentionTimestamp: null,
@@ -103,5 +103,12 @@ describe("attention terminal vs waiting (#141 E2E fix)", () => {
 	test("reason lạ/không terminal (vd 'question') → vẫn chặn (fail-closed)", () => {
 		const rs = records(3, { attentionTimestamp: new Date(NOW - 30 * 60_000).toISOString(), attentionReason: "question" });
 		expect(shouldRemindIdleArchive(toIdleChildren(rs, "P1"), NOW, 15)).toBeNull();
+	});
+});
+
+describe("spawner filter (chống đôi lời với pi ext)", () => {
+	test("con thiếu label subagent.spawner (con pi ext) → không được track", () => {
+		const rs = records(3).map((r) => ({ ...r, labels: { ...r.labels, "subagent.spawner": "pi-ext" as string } }));
+		expect(toIdleChildren(rs, "P1").length).toBe(0);
 	});
 });
