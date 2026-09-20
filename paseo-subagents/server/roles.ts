@@ -11,6 +11,7 @@
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { BUILTIN_ROLE_MD } from "./role-md.generated.js";
 
 export interface RoleTemplate {
 	name: string;
@@ -76,8 +77,18 @@ export function parseRoleMd(filename: string, raw: string): RoleTemplate | null 
 	};
 }
 
-/** Load toàn bộ role template từ roles/ cạnh file này. */
-export function loadRoleTemplates(rolesDir = join(dirname(new URL(import.meta.url).pathname), "..", "roles")): Map<string, RoleTemplate> {
+/** Load toàn bộ role template — mặc định từ BUILTIN nhúng trong code (spec v5: template cố định, không phụ thuộc filesystem runtime). */
+export function loadRoleTemplates(): Map<string, RoleTemplate> {
+	const roles = new Map<string, RoleTemplate>();
+	for (const [name, md] of Object.entries(BUILTIN_ROLE_MD)) {
+		const role = parseRoleMd(`${name}.md`, md);
+		if (role) roles.set(role.name, role);
+	}
+	return roles;
+}
+
+/** Biến thể cho test/dev: đọc từ thư mục roles/ (vd repo đang phát triển). */
+export function loadRoleTemplatesFromDir(rolesDir: string): Map<string, RoleTemplate> {
 	const roles = new Map<string, RoleTemplate>();
 	if (!existsSync(rolesDir)) return roles;
 	for (const file of readdirSync(rolesDir)) {
