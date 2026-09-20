@@ -235,8 +235,17 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     (_event: unknown, context: { paseo?: unknown }): void => {
       if (context?.paseo) capturePaseo(context.paseo as PaseoSendSlice, via);
     };
-  const offTurnEnded = server.on("agent.turn_ended" as never, captureOnly("turn_ended") as never);
-  const offSessionOpen = server.on("agent.session_open" as never, captureOnly("session_open") as never);
+  // Event lạ (runtime từ chối tên) KHÔNG được giết plugin — bắt từng cái.
+  const safeOn = (name: string, fn: unknown): (() => void) => {
+    try {
+      const off = (server.on as unknown as (n: string, f: unknown) => () => void)(name, fn);
+      return typeof off === "function" ? off : () => {};
+    } catch (err) {
+      console.log(`[paseo-subagents] event '${name}' không đăng ký được: ${err instanceof Error ? err.message : String(err)} — bỏ qua`);
+      return () => {};
+    }
+  };
+  const offTurnEnded = safeOn("agent.turn_ended", captureOnly("turn_ended"));
 
   const offHook = registerSubagentReplyHook(server, {
     registry,
@@ -252,8 +261,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     offHook();
     offCreated();
     if (idleTimer) clearInterval(idleTimer);
-    offTurnEnded?.();
-    offSessionOpen?.();
+    offTurnEnded();
     replyServer?.close();
   };
 }
