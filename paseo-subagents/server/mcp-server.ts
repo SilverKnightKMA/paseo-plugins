@@ -20,6 +20,7 @@ const SERVER_INFO = { name: "paseo-subagents", version: "1.0.0" } as const;
 
 import type { PoolItem } from "./pool";
 import { validatePoolArgs } from "./pool";
+import { ASK_TOOL, ANSWER_TOOL, validateQuestion, validateAnswer } from "./ask";
 
 const SERVER_INSTRUCTIONS =
   "Scoped reply door: you may ONLY talk to the main agent that spawned you. " +
@@ -112,6 +113,20 @@ export type SpawnPoolFn = (
   args: { items: PoolItem[]; concurrency?: number },
 ) => Promise<{ poolId: string; spawned: number } | { error: string }>;
 
+/** Con hỏi cha: trả về questionId — KHÔNG block chờ câu trả lời (detach). */
+export type AskFn = (
+  caller: CallerCaps,
+  parentId: string,
+  question: string,
+) => Promise<{ questionId: string } | { error: string }>;
+
+/** Cha trả lời con: đẩy [parent-answer] vào session con. */
+export type AnswerFn = (
+  caller: CallerCaps,
+  questionId: string,
+  answer: string,
+) => Promise<{ delivered: true } | { error: string }>;
+
 interface JsonRpcRequest {
   jsonrpc: "2.0";
   id?: string | number | null;
@@ -142,6 +157,8 @@ export async function listenReplyServer(opts: {
   deliver: DeliverFn;
   spawn?: SpawnFn;
   spawnPool?: SpawnPoolFn;
+  ask?: AskFn;
+  answer?: AnswerFn;
   host?: string;
 }): Promise<ReplyServerHandle> {
   const host = opts.host ?? "127.0.0.1";
@@ -240,7 +257,7 @@ interface DispatchCtx {
   parentId: string;
   title: string;
   caps: CallerCaps;
-  opts: { registry: TokenRegistry; deliver: DeliverFn; spawn?: SpawnFn; spawnPool?: SpawnPoolFn };
+  opts: { registry: TokenRegistry; deliver: DeliverFn; spawn?: SpawnFn; spawnPool?: SpawnPoolFn; ask?: AskFn; answer?: AnswerFn };
 }
 
 async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unknown> {
@@ -266,7 +283,10 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
       return { jsonrpc: "2.0", id: id, result: {} };
     case "tools/list": {
       // Lọc theo caller (spec 4.3): canSpawn=false chỉ thấy reply_to_parent.
-      const tools = ctx.caps.canSpawn ? [REPLY_TOOL, SPAWN_TOOL, POOL_TOOL] : [REPLY_TOOL];
+      // Con (canSpawn=false): reply + ask_parent. Cha (canSpawn): reply + spawn + pool + answer_child.
+      const tools = ctx.caps.canSpawn
+        ? [REPLY_TOOL, SPAWN_TOOL, POOL_TOOL, ANSWER_TOOL]
+        : [REPLY_TOOL, ASK_TOOL];
       return { jsonrpc: "2.0", id: id, result: { tools } };
     }
     case "tools/call": {
@@ -355,7 +375,42 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
           return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `spawn_pool failed: ${reason}` }], isError: true } };
         }
       }
-      return jsonRpcError(id, -32602, `unknown tool '${String(params.name)}': this endpoint exposes ${ctx.caps.canSpawn ? "reply_to_parent, spawn_subagent, spawn_pool" : "only reply_to_parent"}`);
+      if (params.name === ASK_TOOL.name) {
+        const ask = ctx.opts.ask;
+        if (!ask) return jsonRpcError(id, -32601, `ask_parent is not enabled on this door`);
+        const v = validateQuestion(((params.arguments ?? {}) as { question?: unknown }).question);
+        if (!v.ok) return jsonRpcError(id, -32900, v.error);
+        try {
+          const r = await ask(ctx.caps, ctx.parentId, v.question);
+          if ("error" in r) {
+            return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `ask_parent failed: ${r.error}` }], isError: true } };
+          }
+          return {
+            jsonrpc: "2.0", id: id,
+            result: { content: [{ type: "text", text: `câu hỏi đã tới parent (questionId ${r.questionId}) — KHÔNG đợi: [parent-answer] sẽ tới như tin nhắn mới đánh thức con. Kết thúc lượt hoặc làm tiếp việc khác.` }], isError: false },
+          };
+        } catch (err) {
+          return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `ask_parent failed: ${err instanceof Error ? err.message : String(err)}` }], isError: true } };
+        }
+      }
+      if (params.name === ANSWER_TOOL.name) {
+        const answer = ctx.opts.answer;
+        if (!answer) return jsonRpcError(id, -32601, `answer_child is not enabled on this door`);
+        if (!ctx.caps.canSpawn) return jsonRpcError(id, -32901, `answer_child refused: chỉ parent (canSpawn=true) được trả lời con`);
+        const a = (params.arguments ?? {}) as { questionId?: unknown; answer?: unknown };
+        const v = validateAnswer(a.questionId, a.answer);
+        if (!v.ok) return jsonRpcError(id, -32900, v.error);
+        try {
+          const r = await answer(ctx.caps, v.questionId, v.answer);
+          if ("error" in r) {
+            return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `answer_child failed: ${r.error}` }], isError: true } };
+          }
+          return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `[parent-answer] đã tới con` }], isError: false } };
+        } catch (err) {
+          return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `answer_child failed: ${err instanceof Error ? err.message : String(err)}` }], isError: true } };
+        }
+      }
+      return jsonRpcError(id, -32602, `unknown tool '${String(params.name)}': this endpoint exposes ${ctx.caps.canSpawn ? "reply_to_parent, spawn_subagent, spawn_pool, answer_child" : "reply_to_parent, ask_parent"}`);
     }
     default:
       return jsonRpcError(id, -32601, `method not found: ${message.method}`);

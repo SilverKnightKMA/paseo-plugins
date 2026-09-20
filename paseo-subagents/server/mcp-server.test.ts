@@ -42,10 +42,9 @@ describe("scoped reply MCP server", () => {
     expect(["2025-06-18", "2025-03-26", "2024-11-05"]).toContain(r.body.result.protocolVersion);
   });
 
-  test("tools/list exposes exactly one tool", async () => {
+  test("tools/list exposes child toolset (reply + ask_parent)", async () => {
     const r = await rpc("tools/list");
-    expect(r.body.result.tools).toHaveLength(1);
-    expect(r.body.result.tools[0].name).toBe("reply_to_parent");
+    expect(r.body.result.tools.map((t: { name: string }) => t.name).sort()).toEqual(["ask_parent", "reply_to_parent"]);
     expect(r.body.result.tools[0].inputSchema.required).toEqual(["prompt"]);
   });
 
@@ -67,7 +66,7 @@ describe("scoped reply MCP server", () => {
   test("unknown tool -> honest error naming the only tool", async () => {
     const r = await rpc("tools/call", { name: "send_agent_prompt", arguments: { prompt: "x" } });
     expect(r.body.error).toBeDefined();
-    expect(r.body.error.message).toContain("only reply_to_parent");
+    expect(r.body.error.message).toContain("reply_to_parent");
   });
 
   test("missing prompt -> structured invalid-arguments error", async () => {
@@ -148,9 +147,9 @@ test("tools/list: canSpawn=false chỉ thấy reply_to_parent; main thấy cả 
   const handle = await listenReplyServer({ registry, deliver: async () => {} });
   try {
     const childList = (await post(handle.port, childToken, { jsonrpc: "2.0", id: 1, method: "tools/list" })).result!.tools!;
-    expect(childList.map((t) => t.name)).toEqual(["reply_to_parent"]);
+    expect(childList.map((t) => t.name).sort()).toEqual(["ask_parent", "reply_to_parent"]);
     const mainList = (await post(handle.port, mainToken, { jsonrpc: "2.0", id: 2, method: "tools/list" })).result!.tools!;
-    expect(mainList.map((t) => t.name).sort()).toEqual(["reply_to_parent", "spawn_pool", "spawn_subagent"]);
+    expect(mainList.map((t) => t.name).sort()).toEqual(["answer_child", "reply_to_parent", "spawn_pool", "spawn_subagent"]);
   } finally {
     await handle.close();
   }
