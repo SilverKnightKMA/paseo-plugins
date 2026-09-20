@@ -21,8 +21,9 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { TokenRegistry } from "./server/tokens.js";
-import { listenReplyServer, type ReplyServerHandle, type SpawnFn, type SpawnPoolFn, type CallerCaps, type SpawnArgs } from "./server/mcp-server.js";
+import { listenReplyServer, type ReplyServerHandle, type SpawnFn, type SpawnPoolFn, type CallerCaps, type SpawnArgs, type AskFn, type AnswerFn } from "./server/mcp-server.js";
 import { registerSubagentReplyHook, PARENT_ENV, MAIN_MCP_KEY } from "./server/hooks.js";
+import { canAnswer, makeQuestionId, type PendingQuestion } from "./server/ask.js";
 import { composeInitialPrompt, resolveRole, type PluginSettings } from "./server/roles.js";
 import {
   aggregatePoolReport,
@@ -279,6 +280,42 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   }, 30_000);
   poolTimer.unref?.();
 
+  // ── ask_parent / answer_child (#146 / plan step 11) — pending RAM,
+  // restart mất câu hỏi treo (con có thể hỏi lại — fail-honest).
+  const pendingQuestions = new Map<string, PendingQuestion>();
+  const askFn: AskFn = async (caller, parentId, question) => {
+    const api = paseoApi;
+    if (!api) return { error: "paseo API not captured yet — thử lại sau" };
+    const childId = caller.boundAgentId;
+    if (!childId) return { error: "door token chưa bind agentId — thử lại sau giây lát" };
+    const questionId = makeQuestionId();
+    try {
+      await api.agents
+        .ref(parentId)
+        .send(`[child-question] con (${childId.slice(0, 8)}) hỏi: ${question}\nTrả lời bằng tool answer_child với questionId=${questionId}`);
+      pendingQuestions.set(questionId, { questionId, childId, parentId, createdAt: Date.now() });
+      console.log(`[paseo-subagents] ask_parent ${questionId}: con ${childId.slice(0, 8)} -> parent ${parentId.slice(0, 8)}`);
+      return { questionId };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  };
+  const answerFn: AnswerFn = async (caller, questionId, answer) => {
+    const api = paseoApi;
+    if (!api) return { error: "paseo API not captured yet" };
+    const pending = pendingQuestions.get(questionId);
+    if (!pending) return { error: `questionId '${questionId}' không tồn tại (đã trả lời hoặc plugin restart) — con sẽ hỏi lại nếu còn cần` };
+    if (!canAnswer(pending, caller.boundAgentId)) return { error: "chỉ parent của câu hỏi mới được trả lời" };
+    try {
+      await api.agents.ref(pending.childId).send(`[parent-answer] ${answer}`);
+      pendingQuestions.delete(questionId);
+      console.log(`[paseo-subagents] answer_child ${questionId} -> con ${pending.childId.slice(0, 8)}`);
+      return { delivered: true };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  };
+
   let replyServer: ReplyServerHandle | null = null;
   listenReplyServer({
     registry,
@@ -290,6 +327,8 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     },
     spawn: spawnFn,
     spawnPool: spawnPoolFn,
+    ask: askFn,
+    answer: answerFn,
   })
     .then((handle) => {
       replyServer = handle;
