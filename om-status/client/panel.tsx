@@ -3,10 +3,19 @@ import { Text, View, ScrollView } from "react-native";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import { useRpc } from "@getpaseo/plugin/client";
 import { GetOmStatusRpc } from "../shared/rpc.js";
-import { OmCard, OmHeader, OmSection, OmSessionPicker, omChipLabel, omViaSuffix } from "./ui.js";
+import { OmCard, OmHeader, OmSection, OmSessionPicker, omChipLabel, omViaSuffix, type OmColors } from "./ui.js";
 import { useLiveRpc } from "./use-live.js";
 
 const BACKSTOP_MS = 15_000; // push-driven refresh; backstop catches new agents + dropped events
+
+function OmKV({ c, label, value }: { c: OmColors; label: string; value: string }) {
+  return (
+    <View style={{ flexDirection: "row" as const, gap: 6, marginBottom: 1 }}>
+      <Text style={{ color: c.foregroundMuted, fontSize: 11, fontFamily: "monospace", minWidth: 110 }}>{label}</Text>
+      <Text style={{ color: c.foreground, fontSize: 11, fontFamily: "monospace", flexShrink: 1 }}>{value}</Text>
+    </View>
+  );
+}
 
 export function OmStatusPanel(props: PluginWorkspacePanelProps) {
   const read = useRpc(GetOmStatusRpc);
@@ -105,6 +114,41 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
             {stale ? (
               <Text style={{ fontSize: 11, color: c.statusWarning, marginTop: 6 }}>⚠ no new events for {data.ageSec ?? "?"}s</Text>
             ) : null}
+          </OmCard>
+
+          <OmCard c={c} noRail>
+            <OmSection c={c}>Cost & storage</OmSection>
+            {data.summary ? (
+              <>
+                <OmKV c={c} label="session:" value={`$${data.summary.sessionCostUsd.toFixed(4)} (${data.summary.sessionRuns} runs)`} />
+                <OmKV
+                  c={c}
+                  label="  observer:"
+                  value={`$${data.summary.observerCostUsd.toFixed(4)} (${data.summary.observerRuns} runs)`}
+                />
+                <OmKV
+                  c={c}
+                  label="  consolidator:"
+                  value={`$${data.summary.consolidatorCostUsd.toFixed(4)} (${data.summary.consolidatorRuns} runs)`}
+                />
+                <OmKV
+                  c={c}
+                  label="rollup:"
+                  value={
+                    data.summary.rollupFiles > 0
+                      ? `${data.summary.rollupFiles} file(s) folded · $${data.summary.rollupCostUsd.toFixed(4)} preserved`
+                      : "none yet"
+                  }
+                />
+                <OmKV
+                  c={c}
+                  label="cost GC:"
+                  value={`TTL ${data.summary.runsCostTtlDays}d${data.summary.runsCostTtlDays > 0 ? "" : " (off)"} · last sweep ${data.summary.lastRunsGcDay || "never"}`}
+                />
+              </>
+            ) : (
+              <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>no summary in projection</Text>
+            )}
           </OmCard>
 
           <OmCard c={c} noRail>

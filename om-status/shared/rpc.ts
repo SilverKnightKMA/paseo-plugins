@@ -16,6 +16,15 @@ export const OmSummarySchema = z.object({
   poolMax: z.number(),
   sessionCostUsd: z.number(),
   sessionRuns: z.number(),
+  // #100 (v1.0.75): role split + storage/GC — defaults keep OLD projections parsing
+  observerCostUsd: z.number().default(0),
+  observerRuns: z.number().default(0),
+  consolidatorCostUsd: z.number().default(0),
+  consolidatorRuns: z.number().default(0),
+  rollupFiles: z.number().default(0),
+  rollupCostUsd: z.number().default(0),
+  runsCostTtlDays: z.number().default(0),
+  lastRunsGcDay: z.string().default(""),
 });
 
 /**
