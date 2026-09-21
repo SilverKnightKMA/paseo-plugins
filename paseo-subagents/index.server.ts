@@ -39,6 +39,7 @@ import {
   reminderArmed,
   DEFAULT_REMIND_MINUTES,
 } from "./server/idle-archive.js";
+import { doorGrantMessage, GrantLedger, mintDoorForMain, readMainDoorState, shouldGrant } from "./server/grant.js";
 
 /** Max depth tuyệt đối (spec mục 6): main=0 → con=1 → cháu=2. */
 const MAX_DEPTH = 2;
@@ -375,11 +376,6 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   // sau restart, nếu không có agent MỚI nào được tạo thì scanner chết ngắt
   // (E2E 17:51: reminder không nổ dù grace đã hết). Bắt thêm từ các event
   // hay gặp nhất — mọi turn kết thúc của BẤT KỲ agent nào cũng đủ.
-  const captureOnly =
-    (via: string) =>
-    (_event: unknown, context: { paseo?: unknown }): void => {
-      if (context?.paseo) capturePaseo(context.paseo as PaseoSendSlice, via);
-    };
   // Event lạ (runtime từ chối tên) KHÔNG được giết plugin — bắt từng cái.
   const safeOn = (name: string, fn: unknown): (() => void) => {
     try {
@@ -390,7 +386,35 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       return () => {};
     }
   };
-  const offTurnEnded = safeOn("agent.turn_ended", captureOnly("turn_ended"));
+  // ── L1 door-grant (spec v12 mục 11 · #156 / plan 6/20) ────────────────
+  // Main sinh TRƯỚC plugin không có door trong record; khi main đó kết thúc
+  // turn, plugin mint token mới + gửi '[door-grant] <url>' vào chat. Guard:
+  // đúng 1 lần/process/agent (GrantLedger), chỉ main không-door chưa archived.
+  // Tự lành sau restart (ledger RAM rỗng → turn kế grant lại). KHÔNG ghi record.
+  const grantLedger = new GrantLedger();
+  const onTurnEnded = (event: unknown, context: { paseo?: unknown }): void => {
+    if (context?.paseo) capturePaseo(context.paseo as PaseoSendSlice, "turn_ended");
+    try {
+      const agent = (event as { agent?: { id?: string; title?: string } } | null)?.agent;
+      const id = agent?.id;
+      if (!id || !grantLedger.allow(id)) return;
+      const state = readMainDoorState(agentsRoot, id);
+      if (!shouldGrant(state)) return; // đã có door / child / archived / không record
+      const api = paseoApi;
+      if (!api) return; // chưa có lifecycle context — turn sau thử lại
+      const url = mintDoorForMain({ registry, getPort: () => replyServer?.port ?? null, allowFull, log: (m) => console.log(m) }, id, agent.title ?? "main");
+      if (!url) return; // door chưa listen — turn sau thử lại
+      grantLedger.mark(id);
+      void api.agents
+        .ref(id)
+        .send(doorGrantMessage(url))
+        .then(() => console.log(`[paseo-subagents] door-grant đã gửi -> agent ${id} (main không-door, L1)`))
+        .catch((err: unknown) => console.log(`[paseo-subagents] door-grant send failed (${id}): ${err instanceof Error ? err.message : String(err)}`));
+    } catch (err) {
+      console.log(`[paseo-subagents] door-grant check failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+  const offTurnEnded = safeOn("agent.turn_ended", onTurnEnded);
 
   const offHook = registerSubagentReplyHook(server, {
     registry,
