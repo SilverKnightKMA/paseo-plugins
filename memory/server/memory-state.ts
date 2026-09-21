@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { pokeEngineBridges } from "./doorbell-poke.js";
 import { homedir } from "node:os";
 
 /** HOME resolution: env first (tests + containers), os fallback. */
@@ -132,6 +133,7 @@ export async function untombstoneHandler(input: RpcInput<typeof MemoryUntombston
 		mkdirSync(dir, { recursive: true });
 		const ctl = join(dir, `untomb-${Date.now()}-${id}.json`);
 		writeFileSync(ctl, JSON.stringify({ action: "untombstone", id, ts: new Date().toISOString() }, null, "\t") + "\n");
+		void pokeEngineBridges("facts-control", ctl, ""); // #39 bell — global file, engine sweep in ms
 		return { ok: true, queued: true, detail: `queued #${id} — the engine applies it and acks the file` };
 	} catch (e) {
 		return { ok: false, queued: false, detail: String(e).slice(0, 200) };

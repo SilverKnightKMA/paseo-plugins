@@ -1,6 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import { readFile, readdir, mkdir, writeFile, rename } from "node:fs/promises";
+import { pokeEngineBridges } from "./doorbell-poke.js";
 import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { GetPlanStateRpc, SetPlanControlRpc, type PlanPanelState } from "../shared/rpc.js";
@@ -231,6 +232,7 @@ export async function writePlanControl(
   const tmp = `${file}.tmp-${process.pid}`;
   await writeFile(tmp, JSON.stringify(payload), "utf8");
   await rename(tmp, file);
+  void pokeEngineBridges("plan-control", file, input.sessionId); // #39 bell — engine applies in ms
   return {
     ok: true,
     sentAt,

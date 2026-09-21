@@ -2,9 +2,17 @@ import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { GetTaskStateRpc, SetTaskControlRpc, GetGoalStateRpc, SetGoalControlRpc } from "./shared/rpc.js";
 import { readTaskState, writeTaskControl } from "./server/task-state.js";
 import { readGoalState, writeGoalControl } from "./server/goal-state.js";
+import { createDoorbellServer, safeOnDoorbellCapture } from "./server/doorbell-server.js";
 
 export default function contribute(server: PluginServerContext) {
-  server.handle(GetTaskStateRpc, async (input, context) => readTaskState(input, context));
+  // #39 doorbell: own "task-status"/"task-control" bells (task board refresh).
+  const bell = createDoorbellServer("task", ["task-status", "task-control"]);
+  bell.start();
+  safeOnDoorbellCapture(server, bell);
+  server.handle(GetTaskStateRpc, async (input, context) => {
+    bell.setPaseo(context.paseo);
+    return readTaskState(input, context);
+  });
 
   server.handle(SetTaskControlRpc, async (input) => {
     try {

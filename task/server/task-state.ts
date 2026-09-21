@@ -4,6 +4,7 @@ import { readFile, readdir, mkdir, rename, writeFile } from "node:fs/promises";
 import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { GetTaskStateRpc, SetTaskControlRpc, type TaskPanelState } from "../shared/rpc.js";
+import { pokeEngineBridges } from "./doorbell-poke.js";
 import { mergeLiveTitles, titleFor } from "./titles.js";
 import { isHiddenSession, unwrapAgents, type FilterAgentLike } from "./session-filter.js";
 
@@ -251,6 +252,7 @@ export async function writeTaskControl(
   const tmp = `${file}.tmp-${process.pid}`;
   await writeFile(tmp, JSON.stringify(payload), "utf8");
   await rename(tmp, file);
+  void pokeEngineBridges("task-control", file, input.sessionId); // #39 bell — engine applies in ms
   return {
     ok: true,
     sentAt,

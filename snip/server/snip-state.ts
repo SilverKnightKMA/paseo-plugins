@@ -1,4 +1,5 @@
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { pokeEngineBridges } from "./doorbell-poke.js";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
@@ -238,5 +239,6 @@ export async function writeSnipState(input: { sessionId: string; active: string[
   const tmp = `${file}.tmp-${process.pid}`;
   await writeFile(tmp, JSON.stringify(payload), "utf8");
   await rename(tmp, file);
+  void pokeEngineBridges("snip-control", file, input.sessionId); // #39 bell — engine applies in ms
   return { ok: true, sentAt, note: null };
 }

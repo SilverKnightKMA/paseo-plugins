@@ -56,6 +56,19 @@ export default function contribute(client: PluginClientContext) {
       };
     },
   });
+  // #39 doorbell wake signal: engine pokes the plugin server, which appends
+  // kind "doorbell" timeline items (no renderer = invisible). This defensive
+  // transformer removes them from display for EVERY plugin — foreign kinds
+  // pass through untouched.
+  client.addTimelineTransformer({
+    id: "doorbell-hide",
+    query: { itemType: "plugin" },
+    transform: ({ item }) => {
+      if (item.kind === "doorbell") return { items: [] };
+      return undefined;
+    },
+  });
+
   client.addTimelineRenderer({
     kind: "om-history",
     version: 1,

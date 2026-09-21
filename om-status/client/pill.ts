@@ -1,7 +1,10 @@
 import type { PluginButtonRegistration, PluginClientContext } from "@getpaseo/plugin/client";
 import { GetOmStatusRpc } from "../shared/rpc.js";
 
-const POLL_MS = 2000;
+// #39: labels refresh on daemon push (agent events — bell appends included)
+// with a 150ms debounce; this slow backstop only catches dropped events.
+const BACKSTOP_MS = 15_000;
+const DEBOUNCE_MS = 150;
 
 /** Verdict glyph for the pill label (text-only — 0.8 pills have no styling). */
 function verdictMark(verdict: string): string {
@@ -29,13 +32,38 @@ async function fetchOm(client: PluginClientContext, workspaceId: string, agentId
  */
 export function startOmLive(client: PluginClientContext): () => void {
   const registered = new Map<string, PluginButtonRegistration>();
-  const pollers = new Map<string, ReturnType<typeof setInterval>>();
+  const unsubscribers = new Map<string, () => void>();
+  const debounces = new Map<string, ReturnType<typeof setTimeout>>();
 
   function drop(key: string): void {
-    clearInterval(pollers.get(key));
-    pollers.delete(key);
+    const deb = debounces.get(key);
+    if (deb) clearTimeout(deb);
+    debounces.delete(key);
+    try {
+      unsubscribers.get(key)?.();
+    } catch {
+      // already gone
+    }
+    unsubscribers.delete(key);
     registered.get(key)?.remove();
     registered.delete(key);
+  }
+
+  /** Push-driven label refresh: debounce a burst of agent events, then refetch. */
+  function schedule(key: string): void {
+    const prev = debounces.get(key);
+    if (prev) clearTimeout(prev);
+    debounces.set(key, setTimeout(() => {
+      debounces.delete(key);
+      const pill = registered.get(key);
+      if (!pill) return;
+      const [workspaceId, agentId] = key.split("/");
+      void fetchOm(client, workspaceId, agentId)
+        .then((label) => pill.update({ label }))
+        .catch(() => {
+          // keep last label; backstop retries
+        });
+    }, DEBOUNCE_MS));
   }
 
   function register(workspaceId: string, agentId: string): void {
@@ -58,16 +86,11 @@ export function startOmLive(client: PluginClientContext): () => void {
       },
     });
     registered.set(key, pill);
-    pollers.set(
-      key,
-      setInterval(() => {
-        void fetchOm(client, workspaceId, agentId)
-          .then((label) => pill.update({ label }))
-          .catch(() => {
-            // keep last label; next poll retries
-          });
-      }, POLL_MS),
-    );
+    try {
+      unsubscribers.set(key, client.paseo.agents.ref(agentId).subscribe(() => schedule(key)));
+    } catch {
+      // no handle — the backstop below still refreshes this pill
+    }
   }
 
   async function sync(): Promise<void> {
@@ -93,10 +116,15 @@ export function startOmLive(client: PluginClientContext): () => void {
 
   void sync();
   const unsub = client.paseo.agents.subscribe(() => void sync());
-  const timer = setInterval(() => void sync(), 30_000);
+  const syncTimer = setInterval(() => void sync(), 30_000); // new/removed chats
+  // backstop: refresh every label even if a push was dropped (was a 2s poll)
+  const backstop = setInterval(() => {
+    for (const key of registered.keys()) schedule(key);
+  }, BACKSTOP_MS);
   return () => {
     unsub();
-    clearInterval(timer);
+    clearInterval(syncTimer);
+    clearInterval(backstop);
     for (const key of [...registered.keys()]) drop(key);
   };
 }

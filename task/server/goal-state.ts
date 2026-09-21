@@ -1,6 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import { readFile, mkdir, writeFile, rename } from "node:fs/promises";
+import { pokeEngineBridges } from "./doorbell-poke.js";
 import type { RpcInput } from "@getpaseo/plugin";
 import { GetGoalStateRpc, SetGoalControlRpc, type GoalPanelState } from "../shared/rpc.js";
 
@@ -84,5 +85,6 @@ export async function writeGoalControl(
   const tmp = `${file}.tmp-${process.pid}`;
   await writeFile(tmp, JSON.stringify(payload), "utf8");
   await rename(tmp, file);
+  void pokeEngineBridges("goal-control", file, input.sessionId); // #39 bell
   return { ok: true, sentAt, note: "engine applies within ~1s — panel auto-refreshes via ack" };
 }

@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parent
 FILES = [ROOT / "om-status" / "client" / "ui.tsx", ROOT / "om-panel" / "client" / "ui.tsx", ROOT / "snip" / "client" / "ui.tsx", ROOT / "task" / "client" / "ui.tsx", ROOT / "plan" / "client" / "ui.tsx"]
 TITLE_FILES = [ROOT / "om-status" / "server" / "titles.ts", ROOT / "om-panel" / "server" / "titles.ts", ROOT / "snip" / "server" / "titles.ts", ROOT / "task" / "server" / "titles.ts", ROOT / "plan" / "server" / "titles.ts"]
 FILTER_FILES = [ROOT / "om-status" / "server" / "session-filter.ts", ROOT / "om-panel" / "server" / "session-filter.ts", ROOT / "snip" / "server" / "session-filter.ts", ROOT / "task" / "server" / "session-filter.ts", ROOT / "plan" / "server" / "session-filter.ts"]
+DOORBELL_FILES = [ROOT / "om-status" / "server" / "doorbell-server.ts", ROOT / "task" / "server" / "doorbell-server.ts", ROOT / "snip" / "server" / "doorbell-server.ts", ROOT / "memory" / "server" / "doorbell-server.ts"]
+POKE_FILES = [ROOT / "task" / "server" / "doorbell-poke.ts", ROOT / "snip" / "server" / "doorbell-poke.ts", ROOT / "memory" / "server" / "doorbell-poke.ts", ROOT / "plan" / "server" / "doorbell-poke.ts"]
 LIVE_FILES = [ROOT / "om-status" / "client" / "use-live.ts", ROOT / "om-panel" / "client" / "use-live.ts", ROOT / "snip" / "client" / "use-live.ts", ROOT / "task" / "client" / "use-live.ts", ROOT / "plan" / "client" / "use-live.ts", ROOT / "lessons" / "client" / "use-live.ts"]
 
 
@@ -23,7 +25,7 @@ def digest(p: Path) -> str:
 
 
 def main() -> int:
-    for label, files in (("ui.tsx", FILES), ("titles.ts", TITLE_FILES), ("session-filter.ts", FILTER_FILES), ("use-live.ts", LIVE_FILES)):
+    for label, files in (("ui.tsx", FILES), ("titles.ts", TITLE_FILES), ("session-filter.ts", FILTER_FILES), ("use-live.ts", LIVE_FILES), ("doorbell-server.ts", DOORBELL_FILES), ("doorbell-poke.ts", POKE_FILES)):
         if not all(p.exists() for p in files):
             print(f"FAIL: {label} missing —", [str(p) for p in files if not p.exists()])
             return 1
