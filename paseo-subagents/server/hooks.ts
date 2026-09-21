@@ -31,6 +31,8 @@ export interface AgentCreateConfig {
 
 export const PARENT_ENV = "PASEO_PARENT_AGENT_ID";
 export const MODE_ENV = "PASEO_CHILD_MODE";
+/** Env L2 (spec v12): URL door grant cho main không-door (pi ext v1.4.108 đọc). */
+export const DOOR_ENV = "PASEO_SUBAGENTS_DOOR";
 
 export interface SubagentReplyRuntime {
   registry: TokenRegistry;
@@ -136,4 +138,52 @@ export function registerSubagentReplyHook(server: PluginServerContext, rt: Subag
     if (rewritten === request) return undefined; // unchanged: regular agent
     return rewritten as unknown as typeof input.request;
   });
+}
+
+/** Structural slice of agent.session_open before-hook request (spike 2026-09-21:
+ *  buildLaunchContext agent-manager.js:3628 — request mang agentId/provider/
+ *  cwd/workspaceId/reason(create|resume|refresh|import)/purpose/env; hook chỉ
+ *  được đổi env, daemon lấy transformed.env cho process agent). */
+export interface SessionOpenInput {
+  agentId?: string;
+  provider?: string;
+  title?: string | null;
+  reason?: string;
+  purpose?: string;
+  env?: Record<string, string>;
+  [key: string]: unknown;
+}
+
+export interface EnvDoorOptions {
+  agentsRoot: string;
+  /** Quyết định URL (đọc record CHỈ ĐỌC, mint/tái-dùng token qua ledger). */
+  envDoorUrlFor: (agentId: string, title: string) => string | null;
+}
+
+/**
+ * L2 env-door (spec v12 mục 11): before("agent.session_open") — main không-door
+ * (sinh trước plugin) nhận env PASEO_SUBAGENTS_DOOR=<url> mỗi lần process mở
+ * (create/resume/refresh/import). Pi ext v1.4.108 đọc env này TRƯỚC record →
+ * sau 1 lần Refresh, main có door proxy native. KHÔNG đụng env child.
+ */
+export function registerEnvDoorHook(server: PluginServerContext, rt: SubagentReplyRuntime, opts: EnvDoorOptions): () => void {
+  try {
+    return server.before("agent.session_open", (input) => {
+      const request = input.request as unknown as SessionOpenInput;
+      const agentId = request.agentId;
+      if (!agentId || request.env?.[PARENT_ENV]) {
+        return undefined; // child (env cha) hoặc thiếu id: không đụng
+      }
+      // Đã có door env từ caller (reloadAgentSession overrides) — không đè.
+      if (request.env?.[DOOR_ENV]) return undefined;
+      const url = opts.envDoorUrlFor(agentId, request.title ?? "main");
+      if (!url) return undefined; // không thuộc diện / door chưa listen
+      const env = { ...(request.env ?? {}), [DOOR_ENV]: url };
+      rt.log(`[paseo-subagents] env-door: agent ${agentId} reason=${request.reason ?? "?"} — ${DOOR_ENV} đã gán (L2)`);
+      return { ...request, env } as unknown as typeof input.request;
+    });
+  } catch (err) {
+    rt.log(`[paseo-subagents] session_open hook không đăng ký được: ${err instanceof Error ? err.message : String(err)} — bỏ qua`);
+    return () => {};
+  }
 }

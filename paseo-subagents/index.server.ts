@@ -22,7 +22,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { TokenRegistry } from "./server/tokens.js";
 import { listenReplyServer, type ReplyServerHandle, type SpawnFn, type SpawnPoolFn, type CallerCaps, type SpawnArgs, type AskFn, type AnswerFn } from "./server/mcp-server.js";
-import { registerSubagentReplyHook, PARENT_ENV, MAIN_MCP_KEY } from "./server/hooks.js";
+import { registerSubagentReplyHook, registerEnvDoorHook, PARENT_ENV, MAIN_MCP_KEY } from "./server/hooks.js";
 import { canAnswer, makeQuestionId, type PendingQuestion } from "./server/ask.js";
 import { composeInitialPrompt, resolveRole, type PluginSettings } from "./server/roles.js";
 import {
@@ -39,7 +39,7 @@ import {
   reminderArmed,
   DEFAULT_REMIND_MINUTES,
 } from "./server/idle-archive.js";
-import { doorGrantMessage, GrantLedger, mintDoorForMain, readMainDoorState, shouldGrant } from "./server/grant.js";
+import { doorGrantMessage, envDoorUrlForMain, GrantLedger, mintDoorForMain, readMainDoorState, shouldGrant } from "./server/grant.js";
 
 /** Max depth tuyệt đối (spec mục 6): main=0 → con=1 → cháu=2. */
 const MAX_DEPTH = 2;
@@ -404,7 +404,8 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       if (!api) return; // chưa có lifecycle context — turn sau thử lại
       const url = mintDoorForMain({ registry, getPort: () => replyServer?.port ?? null, allowFull, log: (m) => console.log(m) }, id, agent.title ?? "main");
       if (!url) return; // door chưa listen — turn sau thử lại
-      grantLedger.mark(id);
+      const grantedToken = new URL(url).searchParams.get("caller");
+      if (grantedToken) grantLedger.mark(id, grantedToken); // L2 tái dùng đúng token này
       void api.agents
         .ref(id)
         .send(doorGrantMessage(url))
@@ -426,8 +427,22 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     log: (message) => console.log(message),
   });
 
+  // L2 env-door (spec v12 · #157 / plan 7/20): session_open (create/resume/
+  // refresh/import) gán PASEO_SUBAGENTS_DOOR cho main không-door. Tái dùng
+  // token L1 đã grant trong process này (envDoorUrlFor đọc ledger chung).
+  const offEnvDoor = registerEnvDoorHook(server, {
+    registry,
+    getPort: () => replyServer?.port ?? null,
+    allowFull,
+    log: (message) => console.log(message),
+  }, {
+    agentsRoot,
+    envDoorUrlFor: (agentId, title) => envDoorUrlForMain(agentsRoot, { registry, getPort: () => replyServer?.port ?? null, allowFull, log: (m) => console.log(m) }, grantLedger, agentId, title),
+  });
+
   return () => {
     offHook();
+    offEnvDoor();
     offCreated();
     if (idleTimer) clearInterval(idleTimer);
     offTurnEnded();

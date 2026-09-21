@@ -126,3 +126,64 @@ describe("rewriteChildConfig", () => {
     expect(r.registry.verify(token)?.title).toBe("subagent");
   });
 });
+
+// ---- registerEnvDoorHook (spec v12 L2 · #157) ----
+
+import { DOOR_ENV, registerEnvDoorHook, type SessionOpenInput } from "./hooks.js";
+
+interface BeforeFn {
+  (input: { request: unknown }): unknown;
+}
+
+function fakeServer(): { before: (name: string, fn: BeforeFn) => () => void; calls: Array<{ name: string; fn: BeforeFn }> } {
+  const calls: Array<{ name: string; fn: BeforeFn }> = [];
+  return {
+    calls,
+    before: (name: string, fn: BeforeFn) => {
+      calls.push({ name, fn });
+      return () => {};
+    },
+  };
+}
+
+describe("registerEnvDoorHook (L2 #157)", () => {
+  const mkRt = rt;
+  const server = fakeServer();
+  const r = mkRt();
+  registerEnvDoorHook(server as unknown as Parameters<typeof registerEnvDoorHook>[0], r, {
+    agentsRoot: "/tmp/none",
+    envDoorUrlFor: (agentId) => `http://127.0.0.1:43721/mcp?caller=tok-${agentId}`,
+  });
+  const hook = server.calls.find((c) => c.name === "agent.session_open")!.fn;
+
+  test("main không-door nhận env PASEO_SUBAGENTS_DOOR, env cũ giữ nguyên", () => {
+    const req: SessionOpenInput = { agentId: "main-1", provider: "pi", reason: "refresh", env: { FOO: "1" } };
+    const out = hook({ request: req }) as SessionOpenInput;
+    expect(out.env!.FOO).toBe("1");
+    expect(out.env![DOOR_ENV]).toBe("http://127.0.0.1:43721/mcp?caller=tok-main-1");
+  });
+
+  test("child (env PASEO_PARENT_AGENT_ID) KHÔNG bị đụng", () => {
+    const req: SessionOpenInput = { agentId: "child-1", env: { [PARENT_ENV]: "p" } };
+    expect(hook({ request: req })).toBeUndefined();
+  });
+
+  test("đã có DOOR_ENV từ caller → không đè", () => {
+    const req: SessionOpenInput = { agentId: "main-2", env: { [DOOR_ENV]: "http://x/mcp?caller=keep" } };
+    expect(hook({ request: req })).toBeUndefined();
+  });
+
+  test("không agentId → undefined", () => {
+    expect(hook({ request: { provider: "pi" } })).toBeUndefined();
+  });
+
+  test("envDoorUrlFor trả null (không thuộc diện) → không đổi request", () => {
+    const server2 = fakeServer();
+    registerEnvDoorHook(server2 as unknown as Parameters<typeof registerEnvDoorHook>[0], r, {
+      agentsRoot: "/tmp/none",
+      envDoorUrlFor: () => null,
+    });
+    const h2 = server2.calls[0].fn;
+    expect(h2({ request: { agentId: "main-3", env: {} } })).toBeUndefined();
+  });
+});
