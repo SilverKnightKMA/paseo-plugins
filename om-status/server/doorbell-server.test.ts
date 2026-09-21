@@ -76,6 +76,24 @@ describe("doorbell-server #39 — handleLine core", () => {
 		expect(await bell.handleLine(POKE)).toBe("error");
 	});
 
+	test("default listAgents unwraps {agent:{...}} daemon entries (live E2E bug v1.0.77)", async () => {
+		// regression: flat-shape unwrap yielded 0 agents -> every bell was "no-agent"
+		const appended: { agentId: string; kind: string }[] = [];
+		const fakeApi = {
+			agents: {
+				list: async () => ({ entries: [{ agent: { id: "agent-live", runtimeInfo: { sessionId: "sess-live" } } }] }),
+				ref: (id: string) => ({
+					timeline: { append: async (item: { kind: string }) => { appended.push({ agentId: id, kind: item.kind }); } },
+				}),
+			},
+		};
+		const bell = createDoorbellServer("om-status", ["om-status"], { dir: "/unused", log: () => {} });
+		bell.setPaseo(fakeApi as never);
+		const live = JSON.stringify({ v: 1, sessionId: "sess-live", kind: "om-status", file: "/tmp/x.json", ts: "t" });
+		expect(await bell.handleLine(live)).toBe("handled");
+		expect(appended).toEqual([{ agentId: "agent-live", kind: "doorbell" }]);
+	});
+
 	test("session cache: two bells, one listAgents call", async () => {
 		let calls = 0;
 		const deps = {

@@ -89,14 +89,16 @@ export function createDoorbellServer(pluginId: string, owns: readonly string[], 
 	function listAgents(): Promise<DoorbellAgentBrief[]> {
 		if (deps.listAgents) return deps.listAgents();
 		if (!api?.agents) return Promise.resolve([]);
-		return (api.agents.list() as Promise<unknown>).then((raw) => {
-			const list = Array.isArray(raw) ? raw : [];
-			return list
-				.map((a) => {
-					const agent = a as { id?: string; runtimeInfo?: { sessionId?: string | null } };
-					return { id: agent.id ?? "", sessionId: agent.runtimeInfo?.sessionId ?? null };
-				})
-				.filter((a) => a.id);
+		return (api.agents.list() as Promise<{ entries?: unknown[] }>).then((raw) => {
+			// daemon entries are {agent: {...}} wrappers (session-filter.ts #68:
+			// a flat-shape unwrap yields 0 agents — same trap as the plan port).
+			const entries = Array.isArray(raw?.entries) ? raw.entries : [];
+			const out: DoorbellAgentBrief[] = [];
+			for (const e of entries) {
+				const agent = (e as { agent?: { id?: string; runtimeInfo?: { sessionId?: string | null } } }).agent;
+				if (agent?.id) out.push({ id: agent.id, sessionId: agent.runtimeInfo?.sessionId ?? null });
+			}
+			return out;
 		});
 	}
 
