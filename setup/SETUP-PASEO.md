@@ -174,6 +174,41 @@ tail ~/bulk-import.log   # theo dõi
 
 Lưu ý (verify trên store thật 2600 session): mỗi import là 1 RPC — throttle `sleep 1` để daemon không đơ (đã bẻ container một lần khi chạy dồn dập); session có cwd đã bị xóa (vd `/tmp/...` test cũ) sẽ ERR — bỏ qua được; mọi import hiện thành agent active trong app (list dài là tradeoff đã chấp nhận, dọn bằng `paseo archive <agentId>`).
 
+### Chính sách import 4 lớp — bảng skip (v1.0.72, chốt nội dung 2026-09-20)
+
+Luật chung: **session CÓ nội dung thì phải vào paseo**; chỉ 4 nhóm dưới đây được đứng ngoài,
+mỗi nhóm có lý do cấu trúc + lệnh kiểm chứng (nguồn: `learn/report-import-project-2026-09-20.md` §3b —
+dự án import 2600 session đã audit 974→995 agent trên store thật):
+
+| Lớp | Nhóm | Lý do skip | Tự tăng? | Kiểm chứng |
+|---|---|---|---|---|
+| 1 | **OM worker** (pi, dir `.memory-*`) | Worker nhất thời của observational-memory pipeline; kết quả đã hợp nhất vào `.memory/` topic files — tri thức nằm ở đĩa, không trong transcript | CÓ — mỗi turn OM | `ls ~/.pi/agent/sessions/ \| grep memory-` |
+| 2 | **Judge mới** (dir `--judge--/` + registry `~/.pi/agent/judge-sessions.jsonl`) | Verifier done-check layer-2, one-shot: đọc log → PASS/FAIL → chết; marker first-class từ pi-config v1.4.101 | CÓ — mỗi done-check | `tail ~/.pi/agent/judge-sessions.jsonl` |
+| 3 | **Copilot hàng rỗng** (sqlite `~/.copilot/session-store.db`) | 0 turns toàn bộ — byproduct handshake/health-check, không phải hội thoại | CÓ | `SELECT COUNT(*) FROM turns` per session |
+| 4 | **OMP observer-review** (subdir `<ts>_<uuid>/`) | Không phải session — artifact nội bộ OMP (`observerPlanReview/observerResultReview.jsonl`); session omp thật là file `<ts>_<uuid>.jsonl` tầng trên | CÓ | glob `[0-9a-f-]{36}\.jsonl` lọc riêng |
+
+Ranh giới quan trọng: **probe one-shot CÓ nội dung thì KHÔNG skip** — import + archive như thường
+(đã làm đủ: 5 omp stub, 6 codex, 8+19 pi). Judge CŨ (pre-v1.4.101) cũng import+archive, chỉ judge MỚI mới skip.
+
+### Gotcha import đã trả giá (v1.0.72)
+
+1. **Bẫy queue-dựng-từ-file (bài đắt nhất — 126 agent rỗng):** app picker import của paseo
+   lọc `hasConversation` (session rỗng bị ẩn), nhưng import CLI theo `sessionId` KHÔNG lọc.
+   Queue build từ scan đĩa PHẢI lọc file nhiều-dòng / có nội dung hội thoại trước khi import,
+   kẻo các session abort/auth-crash 1-dòng thành agent rỗng nằm trong list.
+2. **Import ACP (factory-droid) sinh vỏ file:** paseo mở probe session tạm khi import →
+   droid persist eager → mỗi lượt +1-2 vỏ `session_start`-only ~194B. Khi đếm file để audit
+   PHẢI lọc vỏ (<2KB, 1 dòng) kẻo thấy "sót ảo". (Skeleton issue upstream:
+   `learn/fd-shell-leak-issue-proposal-2026-09-20.md`.)
+3. **`pi import` hỏi "Fork this session?" khi `--cwd` khác cwd gốc** và abort non-interactive →
+   build queue phải đọc cwd từ JSONL và `mkdir -p` lại cwd gốc trước khi import (đã áp ở bước 1).
+4. **Import là metadata + con trỏ, KHÔNG copy transcript** (`persistence.sessionId` trỏ file gốc):
+   file provider là dữ liệu thật — cấm xóa; xóa file gốc = chết view hội thoại.
+5. **Codex qua paseo không ghi rollout** (chỉ CLI trực tiếp ghi): codex chạy trực tiếp = cần
+   import; chạy qua paseo = đã live, không import lại.
+6. **Archive agent rỗng sau import dở:** CLI `paseo archive` không với agent closed — dùng MCP
+   `paseo_archive_agent` (cùng cơ chế dọn 126 agent fd rỗng + 8 probe E2E 20/09).
+
 ---
 
 ## Migrate Paseo state từ máy cũ (optional, không nằm trong repo)
