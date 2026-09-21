@@ -7,8 +7,9 @@
  * possession of the token proves "I am the agent this URL was minted for".
  * No agent can address any other agent through this door.
  *
- * Registry is process-local: a daemon/plugin restart invalidates all tokens
- * (stale children get an honest reject message, not a silent drop).
+ * Registry is process-local — NHƯNG spec v12 pa1: token đã mint nằm trong record
+ * agent trên đĩa (URL ghi lúc create), verify-miss có thể adopt lại từ đĩa
+ * (RAM = cache của đĩa — disk-is-truth), nên restart không còn giết door vĩnh viễn.
  */
 
 export interface CallerToken {
@@ -47,6 +48,34 @@ export class TokenRegistry {
       if (oldest !== undefined) this.byToken.delete(oldest);
     }
     return token;
+  }
+
+  /**
+   * spec v12 pa1: đăng ký lại token ĐÃ MINT (tồn tại trong record agent trên đĩa) vào
+   * RAM sau khi registry mất vì restart. KHÔNG sinh token mới — nhận nguyên token
+   * string cho sẵn, tái lập entry + bind ngay nếu biết agentId. Fail-closed khi đầy:
+   * throw thay vì evict thầm lặng (token đang sống không bị đá oan).
+   */
+  adopt(token: string, meta: { parentId: string; title: string; depth?: number; canSpawn?: boolean; role?: string; boundAgentId?: string }): CallerToken {
+    if (!/^[0-9a-f]{48}$/.test(token)) {
+      throw new Error(`adopt: token không hợp lệ (độ dài/charset) — từ chối`);
+    }
+    if (this.byToken.has(token)) return this.byToken.get(token)!;
+    if (this.byToken.size >= MAX_TOKENS) {
+      throw new Error(`adopt: registry đầy (${MAX_TOKENS}) — fail-closed, không evict`);
+    }
+    const entry: CallerToken = {
+      token,
+      parentId: meta.parentId,
+      title: meta.title,
+      mintedAt: Date.now(),
+      depth: meta.depth ?? 1,
+      canSpawn: meta.canSpawn ?? false,
+      role: meta.role,
+      boundAgentId: meta.boundAgentId,
+    };
+    this.byToken.set(token, entry);
+    return entry;
   }
 
   /** Gắn agentId cho token đã mint (agent.created về sau — main mint trước khi có id). */
