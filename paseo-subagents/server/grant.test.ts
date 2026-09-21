@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { doorGrantMessage, GrantLedger, mintDoorForMain, readMainDoorState, shouldGrant } from "./grant.js";
+import { doorGrantMessage, envDoorUrlForMain, GrantLedger, mintDoorForMain, readMainDoorState, shouldGrant } from "./grant.js";
 import { TokenRegistry } from "./tokens.js";
 
 let root: string;
@@ -74,14 +74,44 @@ describe("readMainDoorState + shouldGrant (#155)", () => {
   });
 });
 
-describe("GrantLedger (#155)", () => {
-  test("đúng 1 lần mỗi process mỗi agent", () => {
+describe("GrantLedger (#155/#157)", () => {
+  test("đúng 1 lần mỗi process mỗi agent, lưu token", () => {
     const l = new GrantLedger();
     expect(l.allow("a")).toBe(true);
-    l.mark("a");
+    l.mark("a", "tok-a");
     expect(l.allow("a")).toBe(false);
+    expect(l.tokenFor("a")).toBe("tok-a");
+    expect(l.tokenFor("b")).toBeNull();
     expect(l.allow("b")).toBe(true);
     expect(l.size).toBe(1);
+  });
+});
+
+describe("envDoorUrlForMain — L2 tái dùng token L1 (#157)", () => {
+  test("main không-door: L2 mint + mark ledger; gọi lại tái DÙNG token (không mint đôi)", () => {
+    writeRecord("ws2", "main-l2", { id: "main-l2", title: "l2 main", labels: {}, config: { mcpServers: {} } });
+    const rt = fakeRt(43721);
+    const l = new GrantLedger();
+    const u1 = envDoorUrlForMain(root, rt, l, "main-l2", "l2 main");
+    expect(u1).not.toBeNull();
+    const t1 = new URL(u1!).searchParams.get("caller")!;
+    expect(rt.registry.verify(t1)!.boundAgentId).toBe("main-l2");
+    expect(l.tokenFor("main-l2")).toBe(t1);
+    const before = rt.registry.size;
+    const u2 = envDoorUrlForMain(root, rt, l, "main-l2", "l2 main");
+    expect(u2).toBe(`http://127.0.0.1:43721/mcp?caller=${t1}`); // cùng token
+    expect(rt.registry.size).toBe(before); // KHÔNG mint thêm
+  });
+
+  test("main đã có door trong record → null (L2 bỏ qua)", () => {
+    const rt = fakeRt(43721);
+    expect(envDoorUrlForMain(root, rt, new GrantLedger(), "main-new", "t")).toBeNull();
+  });
+
+  test("child / archived → null", () => {
+    const rt = fakeRt(43721);
+    expect(envDoorUrlForMain(root, rt, new GrantLedger(), "child-x", "t")).toBeNull();
+    expect(envDoorUrlForMain(root, rt, new GrantLedger(), "main-gone", "t")).toBeNull();
   });
 });
 

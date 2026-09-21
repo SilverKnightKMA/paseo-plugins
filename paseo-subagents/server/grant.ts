@@ -67,22 +67,52 @@ export function shouldGrant(state: MainDoorState): boolean {
   return state.found && !state.isChild && !state.archived && !state.hasDoor;
 }
 
-/** Đúng 1 grant mỗi process mỗi agent — tự reset khi plugin restart. */
+/** Đúng 1 grant mỗi process mỗi agent — tự reset khi plugin restart.
+ *  Lưu cả token để L1 (turn_ended message) và L2 (session_open env) DÙNG
+ *  CHUNG một token cho cùng agent — không mint đôi. */
 export class GrantLedger {
-  private readonly seen = new Set<string>();
+  private readonly byAgent = new Map<string, string>();
 
   /** true nếu agent này CHƯA được grant trong process hiện tại. */
   allow(agentId: string): boolean {
-    return !this.seen.has(agentId);
+    return !this.byAgent.has(agentId);
   }
 
-  mark(agentId: string): void {
-    this.seen.add(agentId);
+  mark(agentId: string, token: string): void {
+    this.byAgent.set(agentId, token);
+  }
+
+  /** Token đã grant trong process này (L2 tái dùng), hoặc null. */
+  tokenFor(agentId: string): string | null {
+    return this.byAgent.get(agentId) ?? null;
   }
 
   get size(): number {
-    return this.seen.size;
+    return this.byAgent.size;
   }
+}
+
+/**
+ * L2 env-door (spec v12 mục 11): tính URL door để nhét vào env
+ * PASEO_SUBAGENTS_DOOR cho main không-door. Tái dùng token L1 nếu cùng process
+ * đã grant; chưa có thì mint mới. Trả null khi không thuộc diện (child/archived/
+ * đã-door/không record) hoặc door chưa listen. KHÔNG ghi record.
+ */
+export function envDoorUrlForMain(agentsRoot: string, rt: SubagentReplyRuntime, ledger: GrantLedger, agentId: string, title: string): string | null {
+  const state = readMainDoorState(agentsRoot, agentId);
+  if (!shouldGrant(state)) return null;
+  const existing = ledger.tokenFor(agentId);
+  if (existing) {
+    const port = rt.getPort();
+    if (port === null) return null;
+    return `http://127.0.0.1:${port}/mcp?caller=${existing}`;
+  }
+  const url = mintDoorForMain(rt, agentId, title);
+  if (!url) return null;
+  const token = new URL(url).searchParams.get("caller");
+  if (!token) return null;
+  ledger.mark(agentId, token);
+  return url;
 }
 
 /**
