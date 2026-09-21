@@ -25,7 +25,7 @@ const marker = {
   in_progress: "▶",
   pending: "·",
   held: "⚖", // v1.0.47 #64: judge holds completion — awaiting evidence
-  cancelled: "×",
+  cancelled: "x",
   parked: "⏸",
 } as const;
 
