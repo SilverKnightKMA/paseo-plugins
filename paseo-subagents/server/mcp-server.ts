@@ -162,6 +162,9 @@ export async function listenReplyServer(opts: {
   ask?: AskFn;
   answer?: AnswerFn;
   host?: string;
+  /** #147: nếu deliver chưa xong sau số ms này, ack "queued" ngay — send()
+   * chặn tới khi parent hết turn (8+ phút thật với parent mid-turn). */
+  deliverAckMs?: number;
 }): Promise<ReplyServerHandle> {
   const host = opts.host ?? "127.0.0.1";
   const server = http.createServer((req, res) => {
@@ -195,7 +198,11 @@ export async function listenReplyServer(opts: {
   };
 }
 
-async function handle(req: http.IncomingMessage, res: http.ServerResponse, opts: { registry: TokenRegistry; deliver: DeliverFn; adopt?: (token: string) => boolean }): Promise<void> {
+async function handle(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  opts: { registry: TokenRegistry; deliver: DeliverFn; adopt?: (token: string) => boolean; spawn?: SpawnFn; spawnPool?: SpawnPoolFn; ask?: AskFn; answer?: AnswerFn; deliverAckMs?: number },
+): Promise<void> {
   const url = new URL(req.url ?? "/", "http://local");
 
   if (req.method !== "POST") {
@@ -272,8 +279,11 @@ interface DispatchCtx {
   parentId: string;
   title: string;
   caps: CallerCaps;
-  opts: { registry: TokenRegistry; deliver: DeliverFn; spawn?: SpawnFn; spawnPool?: SpawnPoolFn; ask?: AskFn; answer?: AnswerFn };
+  opts: { registry: TokenRegistry; deliver: DeliverFn; spawn?: SpawnFn; spawnPool?: SpawnPoolFn; ask?: AskFn; answer?: AnswerFn; deliverAckMs?: number };
 }
+
+/** #147: mặc định nhường ack sau 2s khi parent mid-turn. */
+export const DELIVER_ACK_MS = 2000;
 
 async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unknown> {
   const id = message.id as string | number;
@@ -311,13 +321,23 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
         if (typeof args.prompt !== "string" || args.prompt.length === 0) {
           return jsonRpcError(id, -32900, "invalid arguments: 'prompt' (non-empty string) is required");
         }
+        // #147: send() chặn tới khi parent hết turn (bug thật: researcher
+        // claude 037b2f53 treo HTTP >8 phút không tool_result trong lúc cha
+        // 27dea12f mid-turn). Đua deliver với ack-hạn: xong nhanh → "delivered";
+        // lỗi nhanh → isError (contract cũ giữ nguyên); quá hạn → ack queued,
+        // promise chạy tiếp nền, lỗi muộn log daemon — không mất, không chặn con.
+        const ackMs = ctx.opts.deliverAckMs ?? DELIVER_ACK_MS;
+        const promptText: string = args.prompt;
+        const inflight = Promise.resolve().then(() => ctx.opts.deliver(ctx.parentId, ctx.title, promptText));
+        inflight.catch((err: unknown) => {
+          const reason = err instanceof Error ? err.message : String(err);
+          console.log(`[paseo-subagents] deliver async-failed ('${ctx.title}'): ${reason}`);
+        });
+        let fast: "delivered" | "queued" = "queued";
+        const timer = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), ackMs));
         try {
-          await ctx.opts.deliver(ctx.parentId, ctx.title, args.prompt);
-          return {
-            jsonrpc: "2.0",
-            id: id,
-            result: { content: [{ type: "text", text: `delivered to parent agent` }], isError: false },
-          };
+          const outcome = await Promise.race([inflight.then(() => "done" as const), timer]);
+          if (outcome === "done") fast = "delivered";
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
           return {
@@ -329,6 +349,22 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
             },
           };
         }
+        return {
+          jsonrpc: "2.0",
+          id: id,
+          result: {
+            content: [
+              {
+                type: "text",
+                text:
+                  fast === "delivered"
+                    ? `delivered to parent agent`
+                    : `delivery accepted (queued — parent busy, report in flight; async failure would be logged server-side)`,
+              },
+            ],
+            isError: false,
+          },
+        };
       }
       if (params.name === SPAWN_TOOL.name) {
         const spawn = ctx.opts.spawn;

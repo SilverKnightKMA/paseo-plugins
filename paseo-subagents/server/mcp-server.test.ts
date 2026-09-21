@@ -292,4 +292,67 @@ describe("verify-miss adopt (pa1 #158)", () => {
       else process.env.PASEO_SUBAGENTS_ADOPT = prev;
     }
   });
+
+  // #147: deliver chặn khi parent mid-turn → con phải nhận tool_result NGAY.
+  test("deliver chậm (parent mid-turn) → ack queued nhanh, delivery vẫn tới sau", async () => {
+    const slowDeliveries: string[] = [];
+    const reg5 = new TokenRegistry();
+    const rt5 = await startReplyServer({
+      registry: reg5,
+      deliverAckMs: 80,
+      deliver: async (_p, _t, prompt) => {
+        await Bun.sleep(400); // giả send() chờ parent hết turn
+        slowDeliveries.push(prompt);
+      },
+    });
+    const tok5 = reg5.mint("parent-slow", "child-slow");
+    try {
+      const t0 = Date.now();
+      const res = await fetch(`http://127.0.0.1:${rt5.port}/mcp?caller=${tok5}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 9001, method: "tools/call", params: { name: "reply_to_parent", arguments: { prompt: "SLOW-147" } } }),
+      });
+      const body = (await res.json()) as any;
+      const elapsed = Date.now() - t0;
+      expect(res.status).toBe(200);
+      expect(elapsed).toBeLessThan(350); // ack về trong ~ackMs (80ms), KHÔNG đợi deliver 400ms
+      expect(body.result.isError).toBe(false);
+      expect(body.result.content[0].text).toContain("queued");
+      expect(slowDeliveries).toHaveLength(0); // chưa tới lúc
+      await Bun.sleep(500); // đợi delivery nền xong
+      expect(slowDeliveries).toEqual(["SLOW-147"]); // không mất tin
+    } finally {
+      await rt5.close();
+    }
+  });
+
+  // #147: lỗi muộn (sau ack queued) phải được log, không thành unhandled rejection.
+  test("deliver lỗi sau ack-hạn → log server-side, con vẫn nhận ack queued", async () => {
+    const reg6 = new TokenRegistry();
+    const rt6 = await startReplyServer({
+      registry: reg6,
+      deliverAckMs: 60,
+      deliver: async () => {
+        await Bun.sleep(200);
+        throw new Error("late boom 147");
+      },
+    });
+    const tok6 = reg6.mint("parent-late", "child-late");
+    try {
+      const res = await fetch(`http://127.0.0.1:${rt6.port}/mcp?caller=${tok6}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 9002, method: "tools/call", params: { name: "reply_to_parent", arguments: { prompt: "LATE-FAIL-147" } } }),
+      });
+      const body = (await res.json()) as any;
+      expect(res.status).toBe(200);
+      expect(body.result.isError).toBe(false);
+      expect(body.result.content[0].text).toContain("queued");
+      await Bun.sleep(300); // cho lỗi muộn nổ + catch log
+      // sống sót qua đây = không unhandled rejection crash process
+    } finally {
+      await rt6.close();
+    }
+  });
 });
