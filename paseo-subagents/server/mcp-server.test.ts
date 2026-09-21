@@ -222,3 +222,74 @@ test("tools/call spawn_subagent: lỗi SpawnFn (role lạ) trả isError kèm l�
     await handle.close();
   }
 });
+
+// ---- adopt-on-miss (spec v12 pa1 · #158 / plan 8/20) ----
+
+describe("verify-miss adopt (pa1 #158)", () => {
+  // Mô phỏng restart: registry MỚI rỗng, token cũ chỉ còn trong "record đĩa"
+  // (map giả lập adoptFromRecord). Request đầu tiên phải được phục vụ NGAY.
+  test("miss → adopt → phục vụ request luôn, không cần client retry", async () => {
+    const oldToken = "a".repeat(48).replace(/^a/, "0") + ""; // 48 hex
+    const token = Array.from({ length: 48 }, (_, i) => (i % 2 ? "b" : "a")).join("");
+    const fresh = new TokenRegistry();
+    const adopted: string[] = [];
+    const rt2 = await startReplyServer({
+      registry: fresh,
+      deliver: async () => {},
+      adopt: (t) => {
+        adopted.push(t);
+        fresh.adopt(t, { parentId: "main-old", title: "old main", depth: 0, canSpawn: true, boundAgentId: "main-old" });
+        return true;
+      },
+    });
+    try {
+      const res = await fetch(`http://127.0.0.1:${rt2.port}/mcp?caller=${token}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+      });
+      expect(res.status).toBe(200); // phục vụ NGAY sau adopt
+      expect(adopted).toEqual([token]);
+      const list = (await res.json()) as { result: { tools: Array<{ name: string }> } };
+      const names = list.result.tools.map((t) => t.name);
+      expect(names).toContain("spawn_subagent"); // main canSpawn=true
+    } finally {
+      await rt2.close();
+    }
+  });
+
+  test("adopt trả false (không thấy record) → 401 như cũ", async () => {
+    const fresh = new TokenRegistry();
+    const rt3 = await startReplyServer({ registry: fresh, deliver: async () => {}, adopt: () => false });
+    try {
+      const res = await fetch(`http://127.0.0.1:${rt3.port}/mcp?caller=${"c".repeat(48)}`, { method: "POST", body: "" });
+      expect(res.status).toBe(401);
+    } finally {
+      await rt3.close();
+    }
+  });
+
+  test("hatch PASEO_SUBAGENTS_ADOPT=0 → không gọi adopt, 401 thẳng", async () => {
+    const prev = process.env.PASEO_SUBAGENTS_ADOPT;
+    process.env.PASEO_SUBAGENTS_ADOPT = "0";
+    const fresh = new TokenRegistry();
+    let called = false;
+    const rt4 = await startReplyServer({
+      registry: fresh,
+      deliver: async () => {},
+      adopt: () => {
+        called = true;
+        return false;
+      },
+    });
+    try {
+      const res = await fetch(`http://127.0.0.1:${rt4.port}/mcp?caller=${"d".repeat(48)}`, { method: "POST", body: "" });
+      expect(res.status).toBe(401);
+      expect(called).toBe(false); // hatch tắt hẳn đường adopt
+    } finally {
+      await rt4.close();
+      if (prev === undefined) delete process.env.PASEO_SUBAGENTS_ADOPT;
+      else process.env.PASEO_SUBAGENTS_ADOPT = prev;
+    }
+  });
+});

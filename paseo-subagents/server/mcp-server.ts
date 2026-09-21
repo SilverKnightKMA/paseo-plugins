@@ -155,6 +155,8 @@ export async function startReplyServer(opts: {
 export async function listenReplyServer(opts: {
   registry: TokenRegistry;
   deliver: DeliverFn;
+  /** spec v12 pa1: gọi khi verify-miss — trả true nếu token được adopt từ đĩa. */
+  adopt?: (token: string) => boolean;
   spawn?: SpawnFn;
   spawnPool?: SpawnPoolFn;
   ask?: AskFn;
@@ -193,7 +195,7 @@ export async function listenReplyServer(opts: {
   };
 }
 
-async function handle(req: http.IncomingMessage, res: http.ServerResponse, opts: { registry: TokenRegistry; deliver: DeliverFn }): Promise<void> {
+async function handle(req: http.IncomingMessage, res: http.ServerResponse, opts: { registry: TokenRegistry; deliver: DeliverFn; adopt?: (token: string) => boolean }): Promise<void> {
   const url = new URL(req.url ?? "/", "http://local");
 
   if (req.method !== "POST") {
@@ -203,7 +205,20 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, opts:
     return;
   }
 
-  const caller = opts.registry.verify(url.searchParams.get("caller"));
+  const tokenParam = url.searchParams.get("caller");
+  let caller = opts.registry.verify(tokenParam);
+  if (!caller && tokenParam && opts.adopt && process.env.PASEO_SUBAGENTS_ADOPT !== "0") {
+    // spec v12 pa1: verify-miss sau restart — token nằm trong record agent trên
+    // đĩa (URL ghi lúc create). Adopt đăng ký lại CÙNG token vào RAM; request
+    // này được phục vụ luôn (verify lần 2), KHÔNG cần client retry.
+    try {
+      if (opts.adopt(tokenParam)) {
+        caller = opts.registry.verify(tokenParam);
+      }
+    } catch {
+      // adopt fail (registry đầy / lỗi đĩa) — rơi xuống 401 như cũ
+    }
+  }
   if (!caller) {
     // Honest reject: this token was never minted, or the server restarted.
     res.writeHead(401, { "content-type": "application/json" });
