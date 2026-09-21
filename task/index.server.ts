@@ -6,7 +6,7 @@ import { createDoorbellServer, safeOnDoorbellCapture } from "./server/doorbell-s
 
 export default function contribute(server: PluginServerContext) {
   // #39 doorbell: own "task-status"/"task-control" bells (task board refresh).
-  const bell = createDoorbellServer("task", ["task-status", "task-control"]);
+  const bell = createDoorbellServer("task", ["task-status", "task-control"], { log: (m) => console.log(`[task] ${m}`) });
   bell.start();
   safeOnDoorbellCapture(server, bell);
   server.handle(GetTaskStateRpc, async (input, context) => {

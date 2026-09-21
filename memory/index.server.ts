@@ -5,7 +5,7 @@ import { createDoorbellServer, safeOnDoorbellCapture } from "./server/doorbell-s
 
 export default function contribute(server: PluginServerContext) {
 	// #39 doorbell: own the "facts-status" bell (memory panel refresh).
-	const bell = createDoorbellServer("memory", ["facts-status"]);
+	const bell = createDoorbellServer("memory", ["facts-status"], { log: (m) => console.log(`[memory] ${m}`) });
 	bell.start();
 	safeOnDoorbellCapture(server, bell);
 	server.handle(GetMemoryStateRpc, async (input, context) => {

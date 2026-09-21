@@ -142,7 +142,7 @@ export function createDoorbellServer(pluginId: string, owns: readonly string[], 
 		if (!owns.includes(poke.kind)) return "foreign";
 		const agentId = await resolveAgentId(poke.sessionId);
 		if (!agentId) {
-			log(`doorbell: no agent for session ${poke.sessionId}`);
+			log(`doorbell: no agent for session ${poke.sessionId} (api captured: ${api ? "yes" : "NO"})`);
 			return "no-agent";
 		}
 		const item: DoorbellItem = {
@@ -154,6 +154,7 @@ export function createDoorbellServer(pluginId: string, owns: readonly string[], 
 		};
 		try {
 			await appendItem(agentId, item);
+			log(`doorbell: ${poke.kind} -> agent ${agentId} appended (file ${poke.file})`);
 			return "handled";
 		} catch (err) {
 			log(`doorbell: append failed: ${String(err)}`);

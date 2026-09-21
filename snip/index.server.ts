@@ -5,7 +5,7 @@ import { createDoorbellServer, safeOnDoorbellCapture } from "./server/doorbell-s
 
 export default function contribute(server: PluginServerContext) {
   // #39 doorbell: own the "snip-control" bell (chips refresh on engine ack).
-  const bell = createDoorbellServer("snip", ["snip-control"]);
+  const bell = createDoorbellServer("snip", ["snip-control"], { log: (m) => console.log(`[snip] ${m}`) });
   bell.start();
   safeOnDoorbellCapture(server, bell);
   server.handle(GetSnipStateRpc, async (input, context) => {
