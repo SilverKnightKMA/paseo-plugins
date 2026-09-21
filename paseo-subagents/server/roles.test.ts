@@ -15,15 +15,15 @@ describe("parseRoleMd", () => {
 	});
 });
 
-describe("loadRoleTemplates (port từ pi-config)", () => {
-	test("đủ 5 role như hiện trạng pi ext", () => {
+describe("loadRoleTemplates (ported from pi-config)", () => {
+	test("includes all 5 roles from the current pi ext", () => {
 		const roles = loadRoleTemplates();
 		for (const name of ["scout", "researcher", "worker", "mermaid-maker", "svg-maker"]) {
 			expect(roles.has(name)).toBe(true);
 		}
 		expect(roles.size).toBeGreaterThanOrEqual(5);
 	});
-	test("mỗi role có systemPrompt không rỗng", () => {
+	test("every role has a non-empty systemPrompt", () => {
 		for (const r of loadRoleTemplates().values()) {
 			expect(r.systemPrompt.length).toBeGreaterThan(0);
 		}
@@ -31,21 +31,21 @@ describe("loadRoleTemplates (port từ pi-config)", () => {
 });
 
 describe("resolveRole (fail-closed)", () => {
-	test("role lạ → liệt kê role khả dụng", () => {
+	test("an unknown role lists available roles", () => {
 		const r = resolveRole("nope", {});
 		expect(r.ok).toBe(false);
 		if (!r.ok) expect(r.error).toContain("scout");
 	});
-	test("provider lạ → từ chối", () => {
+	test("rejects an unknown provider", () => {
 		const r = resolveRole("scout", { roles: { scout: { provider: "grok" as never, config: "scout", model: "x" } } });
 		expect(r.ok).toBe(false);
 	});
-	test("config ngoài catalog → từ chối", () => {
+	test("rejects a config outside the catalog", () => {
 		const r = resolveRole("scout", { roles: { scout: { provider: "codex", config: "yolo", model: "gpt" } } });
 		expect(r.ok).toBe(false);
 		if (!r.ok) expect(r.error).toContain("catalog");
 	});
-	test("thiếu model → từ chối, không tự chọn (role mới không default)", () => {
+	test("a missing model is rejected without automatic selection (new role has no default)", () => {
 		const custom = new Map(loadRoleTemplates());
 		custom.set("custom-x", { name: "custom-x", description: "", tools: [], systemPrompt: "x" });
 		const r = resolveRole("custom-x", { roles: { "custom-x": { provider: "codex", config: "full" } } }, custom);
@@ -60,19 +60,19 @@ describe("resolveRole (fail-closed)", () => {
 			expect(r.role.env).toEqual({});
 		}
 	});
-	test("claude facet → MCP_TOOL_TIMEOUT env đi kèm", () => {
+	test("the Claude facet includes the MCP_TOOL_TIMEOUT environment variable", () => {
 		const r = resolveRole("worker", { roles: { worker: { provider: "claude", config: "acceptEdits", model: "claude-sonnet-4-5" } } });
 		expect(r.ok).toBe(true);
 		if (r.ok) expect(r.role.env.MCP_TOOL_TIMEOUT).toBe("300000");
 	});
-	test("settings ghi đè provider + model cho role (repo wins)", () => {
+	test("settings override the provider and model for a role (repo wins)", () => {
 		const r = resolveRole("worker", { roles: { worker: { provider: "claude", config: "acceptEdits", model: "claude-sonnet-4-5" } } });
 		expect(r.ok).toBe(true);
 		if (r.ok) expect(r.role.providerEntry).toBe("claude/claude-sonnet-4-5");
 	});
 });
 
-describe("composeInitialPrompt (kênh user — không đụng systemPrompt config)", () => {
+describe("composeInitialPrompt (user channel — does not modify systemPrompt config)", () => {
 	test("prompt + --- + TASK", () => {
 		const r = resolveRole("scout", {});
 		if (!r.ok) throw new Error("resolve failed");
@@ -84,16 +84,16 @@ describe("composeInitialPrompt (kênh user — không đụng systemPrompt confi
 });
 
 describe("PROVIDER_CATALOGS", () => {
-	test("pi catalog chứa đủ role pi ext", () => {
+	test("the pi catalog contains all pi ext roles", () => {
 		expect(PROVIDER_CATALOGS.pi.configs).toContain("mermaid-maker");
 	});
-	test("claude có 3 mức permission", () => {
+	test("Claude has 3 permission levels", () => {
 		expect(PROVIDER_CATALOGS.claude.configs).toEqual(["plan", "acceptEdits", "bypassPermissions"]);
 	});
 });
 
-// modeMap: config level -> settings.modeId (E2E 18:07 lộ: modeId 'auto' mặc định,
-// config 'review' bị bỏ lặng lẽ → con codex kẹt approval)
+// modeMap: config level -> settings.modeId (E2E 18:07 revealed that modeId defaults
+// to 'auto'; config 'review' was silently ignored, leaving the Codex child stuck on approval).
 describe("modeMap config -> modeId", () => {
 	test("codex worker config review -> modeId auto-review", () => {
 		const r = resolveRole("worker", {
@@ -111,7 +111,7 @@ describe("modeMap config -> modeId", () => {
 		const p = resolveRole("scout", {});
 		expect(p.ok && p.role.modeId).toBeUndefined();
 	});
-	test("config lạ trong catalog codex mới -> fail-closed", () => {
+	test("an unknown config in the new Codex catalog -> fail-closed", () => {
 		const r = resolveRole("worker", { roles: { worker: { provider: "codex", config: "read-only", model: "m" } } });
 		expect(r.ok).toBe(false);
 	});

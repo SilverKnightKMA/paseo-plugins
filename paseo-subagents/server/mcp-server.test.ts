@@ -128,7 +128,7 @@ describe("scoped reply MCP server", () => {
   });
 });
 
-// ---- spawn_subagent (spec v11: tool list lọc theo caller, detach) ----
+// ---- spawn_subagent (spec v11: tool list filtered by caller, detached) ----
 import type { TokenRegistry } from "./tokens.js";
 
 async function post(port: number, token: string, body: unknown): Promise<Record<string, unknown> & { result?: { tools?: { name: string }[]; content?: { text?: unknown }[]; isError?: boolean }; error?: { message: string } }> {
@@ -140,7 +140,7 @@ async function post(port: number, token: string, body: unknown): Promise<Record<
   return (await res.json()) as never;
 }
 
-test("tools/list: canSpawn=false chỉ thấy reply_to_parent; main thấy cả spawn_subagent", async () => {
+test("tools/list: canSpawn=false sees only reply_to_parent; main also sees spawn_subagent", async () => {
   const registry = new TokenRegistry();
   const childToken = registry.mint("parent-1", "child", { depth: 1, canSpawn: false });
   const mainToken = registry.mint("(main)", "main", { depth: 0, canSpawn: true });
@@ -155,7 +155,7 @@ test("tools/list: canSpawn=false chỉ thấy reply_to_parent; main thấy cả 
   }
 });
 
-test("tools/call spawn_subagent: child canSpawn=false bị từ chối rõ ràng", async () => {
+test("tools/call spawn_subagent: child with canSpawn=false is explicitly refused", async () => {
   const registry = new TokenRegistry();
   const childToken = registry.mint("parent-1", "child", { depth: 1, canSpawn: false });
   let spawnCalls = 0;
@@ -202,7 +202,7 @@ test("tools/call spawn_subagent: main spawn OK, detach shape {agentId,status:run
   }
 });
 
-test("tools/call spawn_subagent: lỗi SpawnFn (role lạ) trả isError kèm lý do", async () => {
+test("tools/call spawn_subagent: a SpawnFn error (unknown role) returns isError with the reason", async () => {
   const registry = new TokenRegistry();
   const mainToken = registry.mint("(main)", "main", { depth: 0, canSpawn: true });
   const handle = await listenReplyServer({
@@ -226,9 +226,10 @@ test("tools/call spawn_subagent: lỗi SpawnFn (role lạ) trả isError kèm l�
 // ---- adopt-on-miss (spec v12 pa1 · #158 / plan 8/20) ----
 
 describe("verify-miss adopt (pa1 #158)", () => {
-  // Mô phỏng restart: registry MỚI rỗng, token cũ chỉ còn trong "record đĩa"
-  // (map giả lập adoptFromRecord). Request đầu tiên phải được phục vụ NGAY.
-  test("miss → adopt → phục vụ request luôn, không cần client retry", async () => {
+  // Simulate a restart: the NEW registry is empty, and the old token remains only
+  // in the "disk record" (a map standing in for adoptFromRecord). The first request
+  // must be served IMMEDIATELY.
+  test("miss → adopt → serves the request immediately without a client retry", async () => {
     const oldToken = "a".repeat(48).replace(/^a/, "0") + ""; // 48 hex
     const token = Array.from({ length: 48 }, (_, i) => (i % 2 ? "b" : "a")).join("");
     const fresh = new TokenRegistry();
@@ -248,7 +249,7 @@ describe("verify-miss adopt (pa1 #158)", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
       });
-      expect(res.status).toBe(200); // phục vụ NGAY sau adopt
+      expect(res.status).toBe(200); // Served IMMEDIATELY after adoption.
       expect(adopted).toEqual([token]);
       const list = (await res.json()) as { result: { tools: Array<{ name: string }> } };
       const names = list.result.tools.map((t) => t.name);
@@ -258,7 +259,7 @@ describe("verify-miss adopt (pa1 #158)", () => {
     }
   });
 
-  test("adopt trả false (không thấy record) → 401 như cũ", async () => {
+  test("adopt returns false (record not found) → 401 as before", async () => {
     const fresh = new TokenRegistry();
     const rt3 = await startReplyServer({ registry: fresh, deliver: async () => {}, adopt: () => false });
     try {
@@ -269,7 +270,7 @@ describe("verify-miss adopt (pa1 #158)", () => {
     }
   });
 
-  test("hatch PASEO_SUBAGENTS_ADOPT=0 → không gọi adopt, 401 thẳng", async () => {
+  test("PASEO_SUBAGENTS_ADOPT=0 hatch → does not call adopt and returns 401 directly", async () => {
     const prev = process.env.PASEO_SUBAGENTS_ADOPT;
     process.env.PASEO_SUBAGENTS_ADOPT = "0";
     const fresh = new TokenRegistry();
@@ -285,7 +286,7 @@ describe("verify-miss adopt (pa1 #158)", () => {
     try {
       const res = await fetch(`http://127.0.0.1:${rt4.port}/mcp?caller=${"d".repeat(48)}`, { method: "POST", body: "" });
       expect(res.status).toBe(401);
-      expect(called).toBe(false); // hatch tắt hẳn đường adopt
+      expect(called).toBe(false); // The hatch completely disables the adoption path.
     } finally {
       await rt4.close();
       if (prev === undefined) delete process.env.PASEO_SUBAGENTS_ADOPT;
@@ -293,15 +294,16 @@ describe("verify-miss adopt (pa1 #158)", () => {
     }
   });
 
-  // #147: deliver chặn khi parent mid-turn → con phải nhận tool_result NGAY.
-  test("deliver chậm (parent mid-turn) → ack queued nhanh, delivery vẫn tới sau", async () => {
+  // #147: delivery blocks while the parent is mid-turn, so the child must receive
+  // tool_result IMMEDIATELY.
+  test("slow delivery (parent mid-turn) → quickly acknowledges queued, then still delivers", async () => {
     const slowDeliveries: string[] = [];
     const reg5 = new TokenRegistry();
     const rt5 = await startReplyServer({
       registry: reg5,
       deliverAckMs: 80,
       deliver: async (_p, _t, prompt) => {
-        await Bun.sleep(400); // giả send() chờ parent hết turn
+        await Bun.sleep(400); // Simulate send() waiting for the parent to end its turn.
         slowDeliveries.push(prompt);
       },
     });
@@ -316,19 +318,20 @@ describe("verify-miss adopt (pa1 #158)", () => {
       const body = (await res.json()) as any;
       const elapsed = Date.now() - t0;
       expect(res.status).toBe(200);
-      expect(elapsed).toBeLessThan(350); // ack về trong ~ackMs (80ms), KHÔNG đợi deliver 400ms
+      expect(elapsed).toBeLessThan(350); // Acknowledgement arrives near ackMs (80ms), WITHOUT waiting 400ms for delivery.
       expect(body.result.isError).toBe(false);
       expect(body.result.content[0].text).toContain("queued");
-      expect(slowDeliveries).toHaveLength(0); // chưa tới lúc
-      await Bun.sleep(500); // đợi delivery nền xong
-      expect(slowDeliveries).toEqual(["SLOW-147"]); // không mất tin
+      expect(slowDeliveries).toHaveLength(0); // Not delivered yet.
+      await Bun.sleep(500); // Wait for background delivery to finish.
+      expect(slowDeliveries).toEqual(["SLOW-147"]); // The report is not lost.
     } finally {
       await rt5.close();
     }
   });
 
-  // #147: lỗi muộn (sau ack queued) phải được log, không thành unhandled rejection.
-  test("deliver lỗi sau ack-hạn → log server-side, con vẫn nhận ack queued", async () => {
+  // #147: a late failure (after the queued acknowledgement) must be logged and must
+  // not become an unhandled rejection.
+  test("delivery fails after the acknowledgement deadline → logs server-side while child still gets queued acknowledgement", async () => {
     const reg6 = new TokenRegistry();
     const rt6 = await startReplyServer({
       registry: reg6,
@@ -349,8 +352,8 @@ describe("verify-miss adopt (pa1 #158)", () => {
       expect(res.status).toBe(200);
       expect(body.result.isError).toBe(false);
       expect(body.result.content[0].text).toContain("queued");
-      await Bun.sleep(300); // cho lỗi muộn nổ + catch log
-      // sống sót qua đây = không unhandled rejection crash process
+      await Bun.sleep(300); // Allow the late failure to fire and be caught and logged.
+      // Reaching this point means no unhandled rejection crashed the process.
     } finally {
       await rt6.close();
     }

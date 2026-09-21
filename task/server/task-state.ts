@@ -24,7 +24,7 @@ const EMPTY: TaskPanelState = {
 };
 
 // session visibility + unwrapAgents live in ./session-filter.js
-// (shared, pinned by check-shared-ui.py — v1.0.50 #68 dùng chung 3 plugin)
+// (shared, pinned by check-shared-ui.py — v1.0.50 #68 shared by three plugins)
 
 function statusDir(): string {
   return path.join(os.homedir(), ".pi", "agent", "task-status");

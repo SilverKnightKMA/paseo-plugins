@@ -1,6 +1,6 @@
 # Paseo plugins (local prototypes)
 
-> **⚠️ Fresh install / hệ 2 repo:** repo này đơn lẻ KHÔNG chạy được — plugin render dữ liệu do extension bên [`pi-config`](https://github.com/SilverKnightKMA/pi-config) sinh ra. Cài từ đầu trên máy mới (Linux/macOS/Windows native): đọc [`setup/SETUP-PASEO.md`](setup/SETUP-PASEO.md) sau khi đã xong [`setup/SETUP-PI.md`](https://github.com/SilverKnightKMA/pi-config/blob/main/setup/SETUP-PI.md) — thiếu một trong hai là hệ không hoạt động.
+> **⚠️ Fresh install / two-repo system:** this repo does NOT work on its own — the plugins render data produced by extensions in [`pi-config`](https://github.com/SilverKnightKMA/pi-config). To install from scratch on a new machine (Linux/macOS/native Windows), read [`setup/SETUP-PASEO.md`](setup/SETUP-PASEO.md) after completing [`setup/SETUP-PI.md`](https://github.com/SilverKnightKMA/pi-config/blob/main/setup/SETUP-PI.md) — the system will not work if either is missing.
 
 Trusted, unsandboxed plugins for the Paseo daemon. Split-runtime: server part
 (`index.ts`) runs in the daemon, client part (`*.client.tsx`) runs in the app.

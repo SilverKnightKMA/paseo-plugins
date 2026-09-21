@@ -1,17 +1,17 @@
-# SETUP-PASEO — cài Paseo daemon + plugin từ đầu (phần 2/2)
+# SETUP-PASEO — install the Paseo daemon + plugins from scratch (part 2/2)
 
-> **⚠️ Hệ 2 repo — repo này đơn lẻ KHÔNG chạy được.**
-> Plugin trong repo (task, plan, agent-health, om-panel, om-status, snip, lessons) render dữ liệu do extension phía **pi-config** sinh ra: task-status/goal-status/plan-control projection, MARKERS timeline transformer, OM ledger. Chưa cài pi pack thì plugin không có gì để hiển thị và hệ wake/task không hoạt động.
-> **Bắt buộc phải làm trước:** [`SETUP-PI.md` trong repo pi-config](https://github.com/SilverKnightKMA/pi-config/blob/main/setup/SETUP-PI.md)
+> **⚠️ Two-repo system — this repo does NOT work on its own.**
+> The plugins in this repo (task, plan, agent-health, om-panel, om-status, snip, lessons) render data produced by extensions in **pi-config**: task-status/goal-status/plan-control projections, the MARKERS timeline transformer, and the OM ledger. Without the pi pack, the plugins have nothing to display and the wake/task system does not work.
+> **Required first:** [`SETUP-PI.md` in the pi-config repo](https://github.com/SilverKnightKMA/pi-config/blob/main/setup/SETUP-PI.md)
 
-Hướng dẫn dành cho **agent** đọc và tự thực hiện trên máy sạch — **Linux, macOS, Windows native** (PowerShell).
+This guide is for an **agent** to read and execute on a clean machine — **Linux, macOS, and native Windows** (PowerShell).
 
 ## 0. Prerequisites
 
-- Node.js ≥ 20 + npm (đã có nếu bạn vừa xong SETUP-PI)
-- Path theo OS: Linux/macOS `~/.paseo/…` · Windows native `%USERPROFILE%\.paseo\…`
+- Node.js ≥ 20 + npm (already installed if you just completed SETUP-PI)
+- Paths by OS: Linux/macOS `~/.paseo/…` · native Windows `%USERPROFILE%\.paseo\…`
 
-## 1. Cài Paseo CLI (kèm daemon)
+## 1. Install the Paseo CLI (includes the daemon)
 
 ```bash
 npm install -g @getpaseo/cli
@@ -24,13 +24,13 @@ paseo --version
 paseo onboard
 ```
 
-Một lệnh: setup lần đầu + start daemon + in pairing instructions. Xong kiểm tra:
+One command performs initial setup, starts the daemon, and prints pairing instructions. Then check:
 
 ```bash
 paseo status
 ```
 
-## 3. Cài 7 plugin từ repo này
+## 3. Install seven plugins from this repo
 
 ```bash
 paseo plugin add SilverKnightKMA/paseo-plugins:agent-health --ref v1.0.57
@@ -42,92 +42,92 @@ paseo plugin add SilverKnightKMA/paseo-plugins:task --ref v1.0.57
 paseo plugin add SilverKnightKMA/paseo-plugins:lessons --ref v1.0.57
 ```
 
-(`--ref v1.0.57` là tag tại thời điểm viết; thay bằng tag mới nhất trong repo nếu có. Daemon tự ghi registry vào config — **không** copy thủ công phần `plugins` của config từ máy khác: path checkout chứa UUID riêng của mỗi máy.)
+(`--ref v1.0.57` is the tag at the time of writing; replace it with the latest tag in the repo if available. The daemon writes the registry into config itself — do **not** manually copy the `plugins` section of config from another machine: checkout paths contain a UUID unique to each machine.)
 
-## 4. Đặt config từ samples
+## 4. Set up config from samples
 
-| File đích | Nguồn sample | Ghi chú |
+| Destination file | Sample source | Notes |
 |---|---|---|
-| `~/.paseo/config.json` | `setup/samples/paseo-config.json` | **MERGE, không ghi đè**: giữ nguyên khối `plugins` daemon vừa tự ghi ở bước 3. Relay LUÔN bật — mặc định đi qua relay chính thức của Paseo (`relay.paseo.sh:443`, daemon onboard tự đặt giá trị này); nếu bạn vận hành relay riêng thì chỉ thay 2 field `endpoint`/`publicEndpoint` bằng host relay của mình |
-| `~/.paseo/orchestration-preferences.json` | `setup/samples/paseo-orchestration-preferences.json` | Điền `<PROVIDER>/<MODEL>` theo model bạn đã cấu hình bên pi (hỏi user, không tự bịa) |
+| `~/.paseo/config.json` | `setup/samples/paseo-config.json` | **MERGE, do not overwrite**: preserve the `plugins` block the daemon just wrote in step 3. The relay is ALWAYS enabled — by default it uses Paseo's official relay (`relay.paseo.sh:443`, set automatically during daemon onboarding); if you operate your own relay, replace only the two `endpoint`/`publicEndpoint` fields with your relay host |
+| `~/.paseo/orchestration-preferences.json` | `setup/samples/paseo-orchestration-preferences.json` | Fill in `<PROVIDER>/<MODEL>` using the model configured in pi (ask the user; do not invent it) |
 
-Sau khi sửa config: `paseo reload`.
+After editing config: `paseo reload`.
 
-Bảng FILL-IN:
+FILL-IN table:
 
-| Placeholder | Lấy từ đâu |
+| Placeholder | Source |
 |---|---|
-| `relay.paseo.sh:443` | Giữ nguyên mặc định (relay chính thức Paseo). Chỉ thay bằng `<YOUR-RELAY-HOST>:443` khi bạn tự vận hành relay — không hardcode host riêng vào config chia sẻ công khai |
-| `<PROVIDER>/<*-MODEL>` | Model user đăng ký ở `~/.pi/agent/models.json` (phần SETUP-PI) |
-| `terminalProfiles` | Sample giữ 4 profile mẫu (tmux/claude/codex/opencode) — giữ những CLI thật có trên máy, thêm profile tùy ý |
+| `relay.paseo.sh:443` | Keep the default (Paseo's official relay). Replace it with `<YOUR-RELAY-HOST>:443` only when operating your own relay — do not hardcode a private host in publicly shared config |
+| `<PROVIDER>/<*-MODEL>` | Model the user registered in `~/.pi/agent/models.json` (SETUP-PI section) |
+| `terminalProfiles` | The sample contains four example profiles (tmux/claude/codex/opencode) — keep the CLIs actually present on the machine and add any desired profiles |
 
 ## 5. Verify
 
 ```bash
-paseo plugin ls          # 7 plugin: agent-health, om-panel, om-status, plan, snip, task, lessons — trạng thái running
-paseo status             # daemon running, config.json load sạch
+paseo plugin ls          # 7 plugins: agent-health, om-panel, om-status, plan, snip, task, lessons — status running
+paseo status             # daemon running, config.json loads cleanly
 ```
 
-Paseo app (app.paseo.sh) mở workspace: panel **Tasks**, **Plans**, **OM Topics**, **Lessons**, **Snip** phải hiện — panel trống hoàn toàn nghĩa là phía pi-config chưa cài (quay lại SETUP-PI).
+Open a workspace in the Paseo app (app.paseo.sh): the **Tasks**, **Plans**, **OM Topics**, **Lessons**, and **Snip** panels must appear — completely empty panels mean pi-config is not installed (return to SETUP-PI).
 
-## 6. KẾT LUẬN — join link cho user dùng ngay
+## 6. FINAL STEP — give the user a join link
 
-Hệ đã đủ điều kiện khi: `pi -p` trả lời OK (SETUP-PI bước 5) + `paseo plugin ls` đủ 7 running + `paseo status` running. Lúc đó in pairing cho user:
+The system is ready when: `pi -p` replies OK (SETUP-PI step 5) + `paseo plugin ls` shows all seven running + `paseo status` is running. Then print pairing information for the user:
 
 ```bash
 paseo daemon pair
 ```
 
-Lệnh in **QR code + join link** của daemon. Agent trình lại cho user theo mẫu:
+The command prints the daemon's **QR code + join link**. The agent should present it to the user as follows:
 
-> Daemon đã sẵn sàng. Mở Paseo app → **Add host** → quét QR hoặc dán link trên → dùng được ngay.
+> The daemon is ready. Open the Paseo app → **Add host** → scan the QR code or paste the link above → start using it immediately.
 
-Nếu user kết nối từ máy khác qua relay: link mang public endpoint của relay — gửi link đó, user dán vào app ở bất kỳ đâu.
+If the user connects from another machine through the relay, the link contains the relay's public endpoint — send that link, and the user can paste it into the app from anywhere.
 
-## 7. Import session setup này vào Paseo
+## 7. Import this setup session into Paseo
 
-Session pi đang chạy hướng dẫn này KHÔNG tự hiện trong Paseo app (chạy từ terminal). Import nó để user thấy toàn bộ lịch sử setup trong app:
+The pi session running this guide does NOT automatically appear in the Paseo app (it runs from the terminal). Import it so the user can see the full setup history in the app:
 
 ```bash
-# 1. Tìm session id pi mới nhất của workspace đang chạy
-#    (thư mục session = cwd bị slug hóa: /home/you/workspaces/foo -> --home-you-workspaces-foo--)
+# 1. Find the latest pi session ID for the current workspace
+#    (session directory = slugified cwd: /home/you/workspaces/foo -> --home-you-workspaces-foo--)
 ls -t ~/.pi/agent/sessions/ | head -5
-# 2. Vào thư mục khớp cwd, file mới nhất có dạng <timestamp>_<sessionId>.jsonl
-SESSION_ID=$(basename "$(ls -t <thư-mục-session>/*.jsonl | head -1)" | sed 's/.*_//; s/\.jsonl//')
-# 3. Import (đã verify: tạo agent entry hiện trong app; chạy 2 lần không sao — daemon tự chặn trùng)
+# 2. In the directory matching cwd, the latest file has the form <timestamp>_<sessionId>.jsonl
+SESSION_ID=$(basename "$(ls -t <session-directory>/*.jsonl | head -1)" | sed 's/.*_//; s/\.jsonl//')
+# 3. Import (verified: creates an agent entry visible in the app; running twice is safe — the daemon rejects duplicates)
 paseo import "$SESSION_ID" --provider pi
 ```
 
-Agent trình user: *"Session setup đã được import — mở Paseo app sẽ thấy toàn bộ quá trình cài đặt như một agent bình thường."* Nếu import nhầm session, dọn bằng `paseo archive <agentId>`.
+Tell the user: *"The setup session has been imported — open the Paseo app to see the complete installation process as a normal agent."* If the wrong session is imported, clean it up with `paseo archive <agentId>`.
 
-### Import hàng loạt / provider khác (optional)
+### Bulk import / other providers (optional)
 
-**Nguyên tắc subagent (chỉ thị user 2026-09-19): subagent chưa import thì
-PHẢI import rồi archive ngay — KHÔNG loại bỏ.** Subagent hiện tại KHÔNG bao
-giờ sót: `spawn_subagent` luôn đi qua `paseo_create_agent` nên child được
-đăng ký live với labels `subagent.role`/`subagent.parent` ngay từ lúc spawn.
-Session subagent chỉ sót trên đĩa khi thuộc thời spawn trực tiếp cũ (pre-MCP):
-user-message ĐẦU TIÊN là role prompt (vd `"You are a research specialist...
-"`) hoặc có delimiter `\n---\nTASK:\n`. Xử lý: import + `--label
-subagent.role=<role>` rồi ARCHIVE NGAY qua MCP `paseo_archive_agent` để
-khỏi nhìn thấy trong list chính (CLI `paseo archive` không với tới agent
-closed — lỗi "Agent not found" đã verify). Đã verify: 106 researcher cũ
-import+label+archive 106/106.
+**Subagent principle (user directive 2026-09-19): an unimported subagent MUST
+be imported and then archived immediately — do NOT omit it.** Current subagents
+are NEVER missed: `spawn_subagent` always goes through `paseo_create_agent`, so
+the child is registered live with `subagent.role`/`subagent.parent` labels at spawn.
+A subagent session remains only on disk when it comes from the old direct-spawn era
+(pre-MCP): the FIRST user message is a role prompt (for example, `"You are a research
+specialist..."`) or contains the delimiter `\n---\nTASK:\n`. Handle it by importing
+with `--label subagent.role=<role>`, then ARCHIVE IMMEDIATELY through MCP
+`paseo_archive_agent` so it does not appear in the main list (CLI `paseo archive`
+cannot reach a closed agent — the "Agent not found" error is verified). Verified:
+106 old researchers imported + labeled + archived, 106/106.
 
-Cùng một lệnh cho mọi provider đang bật trong daemon — chỉ đổi `--provider` (pi, omp, codex, opencode, copilot, claude…) và nguồn file session theo từng nhà cung cấp. Import trùng bị daemon tự chặn ("already imported") nên loop an toàn. Mặc định: **mọi session trừ OM worker** (các dir `.memory-*` — session nội bộ của observational-memory, import sẽ hỏi fork tương tác):
+Use the same command for every provider enabled in the daemon — change only `--provider` (pi, omp, codex, opencode, copilot, claude…) and the provider-specific session file source. The daemon rejects duplicate imports ("already imported"), so the loop is safe. Default: **every session except OM workers** (`.memory-*` directories — internal observational-memory sessions whose import prompts for an interactive fork):
 
 ```bash
-# Bước 1 — build queue offline: mỗi dòng "provider<TAB>sessionId<TAB>cwd"
-# (cwd đọc từ chính JSONL — BẮT BUỘC: session thuộc workspace khác mà thiếu --cwd
-#  thì daemon hỏi "Fork this session...?" tương tác và abort khi chạy nền)
+# Step 1 — build the queue offline: each line is "provider<TAB>sessionId<TAB>cwd"
+# (read cwd from the JSONL itself — REQUIRED: for a session from another workspace,
+#  omitting --cwd makes the daemon ask "Fork this session...?" interactively and abort in the background)
 python3 - <<'PY'
 import glob, os, re, json
 from collections import Counter
-# BỎ judge/one-shot — TIN HIỆU HẠNG NHẤT (pi-config v1.4.101+): mọi lần spawn judge
-# GHI 1 dòng registry ~/.pi/agent/judge-sessions.jsonl {ts,cwd,path} và pin
-# session vào subdir --judge--. Filter đọc registry + bỏ cả subdir đó; KHÔNG
-# dò đoán nội dung. Fingerprint 6-record bên dưới CHỈ là fallback cho judge
-# sinh TRƯỚC v1.4.101 (máy cũ chưa có registry).
+# EXCLUDE judge/one-shot — HIGHEST-QUALITY SIGNAL (pi-config v1.4.101+): every judge spawn
+# WRITES one registry line to ~/.pi/agent/judge-sessions.jsonl {ts,cwd,path} and pins the
+# session to the --judge-- subdirectory. The filter reads the registry + excludes that entire
+# subdirectory; do NOT infer from content. The six-record fingerprint below is ONLY a fallback
+# for judges created BEFORE v1.4.101 (old machines without the registry).
 REG = os.path.expanduser('~/.pi/agent/judge-sessions.jsonl')
 judge_paths = set()
 try:
@@ -136,9 +136,9 @@ try:
         except: pass
 except FileNotFoundError: pass
 ONE_SHOT = {'session':1,'model_change':1,'thinking_level_change':1,'message':2,'custom_message':1}
-# Biến thể mở rộng (2026-09-19): judge verifier + probe `pi -p` rác cũng có core
-# {session:1, model_change:1, thinking_level_change:1, message:2} KHÔNG kèm
-# custom_message (11 judge verifier + 12 probe pi/omp đã trượt rule cũ)
+# Broader variant (2026-09-19): judge verifiers + disposable `pi -p` probes also have the core
+# {session:1, model_change:1, thinking_level_change:1, message:2} WITHOUT
+# custom_message (11 judge verifiers + 12 pi/omp probes missed the old rule)
 def is_one_shot(f):
     c = Counter()
     with open(f) as fh:
@@ -152,9 +152,9 @@ def is_one_shot(f):
             and d.get('custom_message',0) in (0,1))
 q = []
 for f in glob.glob(os.path.expanduser('~/.pi/agent/sessions/*/*.jsonl')):
-    if '.memory-' in f: continue          # bỏ OM worker
-    if '/--judge--/' in f or f in judge_paths: continue   # bỏ judge (registry v1.4.101+)
-    if is_one_shot(f): continue           # fallback: judge cũ pre-v1.4.101
+    if '.memory-' in f: continue          # exclude OM workers
+    if '/--judge--/' in f or f in judge_paths: continue   # exclude judges (registry v1.4.101+)
+    if is_one_shot(f): continue           # fallback: old pre-v1.4.101 judges
     sid = re.sub(r'.*_','',os.path.basename(f)).replace('.jsonl','')
     head = open(f,'rb').read(4000).decode('utf8','ignore')
     m = re.search(r'"cwd":"([^"]*)"', head)
@@ -162,62 +162,62 @@ for f in glob.glob(os.path.expanduser('~/.pi/agent/sessions/*/*.jsonl')):
 open(os.path.expanduser('~/bulk-import-queue.tsv'),'w').write('\n'.join(q))
 PY
 
-# Bước 2 — import có throttle, log vào ~/ (không dùng /tmp — mất khi restart)
+# Step 2 — throttled import, log to ~/ (do not use /tmp — it is lost on restart)
 setsid nohup bash -c '
 while IFS=$'"'"'\t'"'"' read -r PROV ID CWD; do
   paseo import "$ID" --provider "$PROV" ${CWD:+--cwd "$CWD"} 2>&1 | grep -qE "created|already" || echo "ERR $ID"
   sleep 1
 done < ~/bulk-import-queue.tsv
 echo BULK-DONE' > ~/bulk-import.log 2>&1 &
-tail ~/bulk-import.log   # theo dõi
+tail ~/bulk-import.log   # monitor
 ```
 
-Lưu ý (verify trên store thật 2600 session): mỗi import là 1 RPC — throttle `sleep 1` để daemon không đơ (đã bẻ container một lần khi chạy dồn dập); session có cwd đã bị xóa (vd `/tmp/...` test cũ) sẽ ERR — bỏ qua được; mọi import hiện thành agent active trong app (list dài là tradeoff đã chấp nhận, dọn bằng `paseo archive <agentId>`).
+Note (verified on the real 2600-session store): each import is one RPC — throttle with `sleep 1` so the daemon does not freeze (a burst once broke the container); sessions whose cwd has been deleted (for example, an old `/tmp/...` test) will ERR — these can be skipped; every import appears as an active agent in the app (the long list is an accepted tradeoff; clean up with `paseo archive <agentId>`).
 
-### Chính sách import 4 lớp — bảng skip (v1.0.72, chốt nội dung 2026-09-20)
+### Four-layer import policy — skip table (v1.0.72, finalized 2026-09-20)
 
-Luật chung: **session CÓ nội dung thì phải vào paseo**; chỉ 4 nhóm dưới đây được đứng ngoài,
-mỗi nhóm có lý do cấu trúc + lệnh kiểm chứng (nguồn: `learn/report-import-project-2026-09-20.md` §3b —
-dự án import 2600 session đã audit 974→995 agent trên store thật):
+General rule: **every session WITH content must go into Paseo**; only the four groups below may remain outside,
+each with a structural reason + verification command (source: `learn/report-import-project-2026-09-20.md` §3b —
+the 2600-session import project audited 974→995 agents on the real store):
 
-| Lớp | Nhóm | Lý do skip | Tự tăng? | Kiểm chứng |
+| Layer | Group | Reason to skip | Grows automatically? | Verification |
 |---|---|---|---|---|
-| 1 | **OM worker** (pi, dir `.memory-*`) | Worker nhất thời của observational-memory pipeline; kết quả đã hợp nhất vào `.memory/` topic files — tri thức nằm ở đĩa, không trong transcript | CÓ — mỗi turn OM | `ls ~/.pi/agent/sessions/ \| grep memory-` |
-| 2 | **Judge mới** (dir `--judge--/` + registry `~/.pi/agent/judge-sessions.jsonl`) | Verifier done-check layer-2, one-shot: đọc log → PASS/FAIL → chết; marker first-class từ pi-config v1.4.101 | CÓ — mỗi done-check | `tail ~/.pi/agent/judge-sessions.jsonl` |
-| 3 | **Copilot hàng rỗng** (sqlite `~/.copilot/session-store.db`) | 0 turns toàn bộ — byproduct handshake/health-check, không phải hội thoại | CÓ | `SELECT COUNT(*) FROM turns` per session |
-| 4 | **OMP observer-review** (subdir `<ts>_<uuid>/`) | Không phải session — artifact nội bộ OMP (`observerPlanReview/observerResultReview.jsonl`); session omp thật là file `<ts>_<uuid>.jsonl` tầng trên | CÓ | glob `[0-9a-f-]{36}\.jsonl` lọc riêng |
+| 1 | **OM worker** (pi, dir `.memory-*`) | Ephemeral observational-memory pipeline worker; its result has been consolidated into `.memory/` topic files — the knowledge is on disk, not in the transcript | YES — every OM turn | `ls ~/.pi/agent/sessions/ \| grep memory-` |
+| 2 | **New judge** (dir `--judge--/` + registry `~/.pi/agent/judge-sessions.jsonl`) | Layer-2 one-shot done-check verifier: reads log → PASS/FAIL → exits; first-class marker since pi-config v1.4.101 | YES — every done check | `tail ~/.pi/agent/judge-sessions.jsonl` |
+| 3 | **Empty Copilot row** (sqlite `~/.copilot/session-store.db`) | Zero turns throughout — a handshake/health-check byproduct, not a conversation | YES | `SELECT COUNT(*) FROM turns` per session |
+| 4 | **OMP observer-review** (subdir `<ts>_<uuid>/`) | Not a session — an internal OMP artifact (`observerPlanReview/observerResultReview.jsonl`); the real omp session is the parent-level `<ts>_<uuid>.jsonl` file | YES | glob `[0-9a-f-]{36}\.jsonl` separately |
 
-Ranh giới quan trọng: **probe one-shot CÓ nội dung thì KHÔNG skip** — import + archive như thường
-(đã làm đủ: 5 omp stub, 6 codex, 8+19 pi). Judge CŨ (pre-v1.4.101) cũng import+archive, chỉ judge MỚI mới skip.
+Important boundary: **do NOT skip a one-shot probe WITH content** — import + archive it as usual
+(completed for all: 5 omp stubs, 6 codex, 8+19 pi). OLD judges (pre-v1.4.101) are also imported + archived; only NEW judges are skipped.
 
-### Gotcha import đã trả giá (v1.0.72)
+### Import gotchas learned the hard way (v1.0.72)
 
-1. **Bẫy queue-dựng-từ-file (bài đắt nhất — 126 agent rỗng):** app picker import của paseo
-   lọc `hasConversation` (session rỗng bị ẩn), nhưng import CLI theo `sessionId` KHÔNG lọc.
-   Queue build từ scan đĩa PHẢI lọc file nhiều-dòng / có nội dung hội thoại trước khi import,
-   kẻo các session abort/auth-crash 1-dòng thành agent rỗng nằm trong list.
-2. **Import ACP (factory-droid) sinh vỏ file:** paseo mở probe session tạm khi import →
-   droid persist eager → mỗi lượt +1-2 vỏ `session_start`-only ~194B. Khi đếm file để audit
-   PHẢI lọc vỏ (<2KB, 1 dòng) kẻo thấy "sót ảo". (Skeleton issue upstream:
+1. **Queue-from-files trap (the costliest lesson — 126 empty agents):** Paseo's import app picker
+   filters `hasConversation` (empty sessions are hidden), but CLI import by `sessionId` does NOT.
+   A queue built from a disk scan MUST filter for multi-line files / conversation content before import,
+   or one-line abort/auth-crash sessions become empty agents in the list.
+2. **ACP (factory-droid) import creates file shells:** Paseo opens a temporary probe session during import →
+   droid eagerly persists → each run adds 1–2 ~194B `session_start`-only shells. File-count audits
+   MUST filter shells (<2KB, one line) to avoid "phantom omissions." (Upstream issue skeleton:
    `learn/fd-shell-leak-issue-proposal-2026-09-20.md`.)
-3. **`pi import` hỏi "Fork this session?" khi `--cwd` khác cwd gốc** và abort non-interactive →
-   build queue phải đọc cwd từ JSONL và `mkdir -p` lại cwd gốc trước khi import (đã áp ở bước 1).
-4. **Import là metadata + con trỏ, KHÔNG copy transcript** (`persistence.sessionId` trỏ file gốc):
-   file provider là dữ liệu thật — cấm xóa; xóa file gốc = chết view hội thoại.
-5. **Codex qua paseo không ghi rollout** (chỉ CLI trực tiếp ghi): codex chạy trực tiếp = cần
-   import; chạy qua paseo = đã live, không import lại.
-6. **Archive agent rỗng sau import dở:** CLI `paseo archive` không với agent closed — dùng MCP
-   `paseo_archive_agent` (cùng cơ chế dọn 126 agent fd rỗng + 8 probe E2E 20/09).
+3. **`pi import` asks "Fork this session?" when `--cwd` differs from the original cwd** and aborts non-interactively →
+   queue building must read cwd from the JSONL and recreate the original cwd with `mkdir -p` before import (applied in step 1).
+4. **Import is metadata + a pointer; it does NOT copy the transcript** (`persistence.sessionId` points to the original file):
+   the provider file is the real data — never delete it; deleting the original file breaks the conversation view.
+5. **Codex through Paseo does not write a rollout** (only direct CLI runs do): directly run Codex
+   needs import; Codex run through Paseo is already live and must not be re-imported.
+6. **Archive an empty agent after a partial import:** CLI `paseo archive` cannot reach a closed agent — use MCP
+   `paseo_archive_agent` (the same mechanism used to remove 126 empty fd agents + eight E2E probes on 20/09).
 
 ---
 
-## Migrate Paseo state từ máy cũ (optional, không nằm trong repo)
+## Migrate Paseo state from an old machine (optional, not stored in the repo)
 
-| Nhóm | File/thư mục | Bắt buộc? |
+| Group | Files/directories | Required? |
 |---|---|---|
-| Config | `config.json`, `orchestration-preferences.json`, `daemon-keypair.json`, `server-id`, `cli-client-id`, `push-tokens.json`, `projects/`, `plugin-data/` | Khuyến nghị — giữ danh tính daemon với relay + cấu hình |
-| Plugin checkouts | `plugins/` (15M) | Không — `paseo plugin add` tự checkout đúng path máy mới |
-| Dữ liệu | `uploads/`, `agents/` | Tùy — file user upload / lịch sử agent |
-| Rác | `*.log`, `runtime/`, `recovery-*`, `*.bak.*`, `paseo.pid` | Bỏ lại |
+| Config | `config.json`, `orchestration-preferences.json`, `daemon-keypair.json`, `server-id`, `cli-client-id`, `push-tokens.json`, `projects/`, `plugin-data/` | Recommended — preserves the daemon identity with the relay + configuration |
+| Plugin checkouts | `plugins/` (15M) | No — `paseo plugin add` checks out the correct path on the new machine |
+| Data | `uploads/`, `agents/` | Optional — user-uploaded files / agent history |
+| Junk | `*.log`, `runtime/`, `recovery-*`, `*.bak.*`, `paseo.pid` | Leave behind |
 
-Lưu ý: merge `config.json` cũ vào máy mới theo hướng bước 4 (giữ registry plugin mới, không copy path UUID cũ).
+Note: merge the old `config.json` into the new machine as described in step 4 (preserve the new plugin registry; do not copy old UUID paths).

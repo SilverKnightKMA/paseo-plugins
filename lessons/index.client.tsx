@@ -17,7 +17,7 @@ export default function contribute(client: PluginClientContext) {
 
 	client.addCommandCenterItem({
 		id: "lessons-open",
-		title: "Lessons: bài học đã fold theo session",
+		title: "Lessons: folded by session",
 		icon: "GraduationCap",
 		keywords: ["lessons", "memory", "failure", "convention", "preference"],
 		context: "workspace",

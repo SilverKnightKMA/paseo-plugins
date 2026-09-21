@@ -31,14 +31,14 @@ function fakeRt(port: number | null, logLines: string[] = []) {
 }
 
 describe("readMainDoorState + shouldGrant (#155)", () => {
-  test("main cũ KHÔNG door → shouldGrant=true (đúng case session cf76ad71)", () => {
+  test("an older main with NO door → shouldGrant=true (session cf76ad71 case)", () => {
     writeRecord("ws", "main-old", { id: "main-old", title: "old main", labels: {}, config: { mcpServers: {} } });
     const s = readMainDoorState(root, "main-old");
     expect(s).toEqual({ found: true, isChild: false, archived: false, hasDoor: false });
     expect(shouldGrant(s)).toBe(true);
   });
 
-  test("main ĐÃ có door trong record → shouldGrant=false (không đè door ai)", () => {
+  test("a main that ALREADY has a door in its record → shouldGrant=false (do not overwrite another door)", () => {
     writeRecord("ws", "main-new", {
       id: "main-new",
       labels: {},
@@ -58,16 +58,16 @@ describe("readMainDoorState + shouldGrant (#155)", () => {
     expect(shouldGrant(s)).toBe(false);
   });
 
-  test("archived main không door → false", () => {
+  test("an archived main without a door → false", () => {
     writeRecord("ws", "main-gone", { id: "main-gone", labels: {}, archivedAt: "2026-09-01T00:00:00.000Z", config: {} });
     const s = readMainDoorState(root, "main-gone");
     expect(s.archived).toBe(true);
     expect(shouldGrant(s)).toBe(false);
   });
 
-  test("không có record / JSON hỏng → found=false, false", () => {
+  test("a missing record or invalid JSON → found=false, false", () => {
     expect(readMainDoorState(root, "ghost").found).toBe(false);
-    // ghi JSON hỏng trực tiếp
+    // Write invalid JSON directly.
     writeFileSync(join(root, "ws", "broken.json"), "{oops");
     expect(readMainDoorState(root, "broken").found).toBe(false);
     expect(shouldGrant({ found: false, isChild: false, archived: false, hasDoor: false })).toBe(false);
@@ -75,7 +75,7 @@ describe("readMainDoorState + shouldGrant (#155)", () => {
 });
 
 describe("GrantLedger (#155/#157)", () => {
-  test("đúng 1 lần mỗi process mỗi agent, lưu token", () => {
+  test("runs exactly once per process per agent and stores the token", () => {
     const l = new GrantLedger();
     expect(l.allow("a")).toBe(true);
     l.mark("a", "tok-a");
@@ -87,8 +87,8 @@ describe("GrantLedger (#155/#157)", () => {
   });
 });
 
-describe("envDoorUrlForMain — L2 tái dùng token L1 (#157)", () => {
-  test("main không-door: L2 mint + mark ledger; gọi lại tái DÙNG token (không mint đôi)", () => {
+describe("envDoorUrlForMain — L2 reuses the L1 token (#157)", () => {
+  test("main without a door: L2 mints and marks the ledger; another call REUSES the token (no double mint)", () => {
     writeRecord("ws2", "main-l2", { id: "main-l2", title: "l2 main", labels: {}, config: { mcpServers: {} } });
     const rt = fakeRt(43721);
     const l = new GrantLedger();
@@ -99,11 +99,11 @@ describe("envDoorUrlForMain — L2 tái dùng token L1 (#157)", () => {
     expect(l.tokenFor("main-l2")).toBe(t1);
     const before = rt.registry.size;
     const u2 = envDoorUrlForMain(root, rt, l, "main-l2", "l2 main");
-    expect(u2).toBe(`http://127.0.0.1:43721/mcp?caller=${t1}`); // cùng token
-    expect(rt.registry.size).toBe(before); // KHÔNG mint thêm
+    expect(u2).toBe(`http://127.0.0.1:43721/mcp?caller=${t1}`); // Same token.
+    expect(rt.registry.size).toBe(before); // Do NOT mint another token.
   });
 
-  test("main đã có door trong record → null (L2 bỏ qua)", () => {
+  test("a main that already has a door in its record → null (L2 skips it)", () => {
     const rt = fakeRt(43721);
     expect(envDoorUrlForMain(root, rt, new GrantLedger(), "main-new", "t")).toBeNull();
   });
@@ -116,7 +116,7 @@ describe("envDoorUrlForMain — L2 tái dùng token L1 (#157)", () => {
 });
 
 describe("mintDoorForMain + doorGrantMessage (#155)", () => {
-  test("mint depth0 canSpawn, bind NGAY agentId, URL chứa token", () => {
+  test("mints with depth 0 and canSpawn, binds agentId IMMEDIATELY, and includes the token in the URL", () => {
     const logs: string[] = [];
     const rt = fakeRt(43721, logs);
     const url = mintDoorForMain(rt, "main-old", "old main");
@@ -126,18 +126,18 @@ describe("mintDoorForMain + doorGrantMessage (#155)", () => {
     const c = rt.registry.verify(token)!;
     expect(c.canSpawn).toBe(true);
     expect(c.depth).toBe(0);
-    expect(c.parentId).toBe("main-old"); // parentId = agentId (không phải '(main)')
+    expect(c.parentId).toBe("main-old"); // parentId = agentId (not '(main)').
     expect(c.boundAgentId).toBe("main-old");
     expect(logs.some((l) => l.includes("door-grant mint"))).toBe(true);
   });
 
-  test("port null (door chưa listen) → null, KHÔNG mint", () => {
+  test("a null port (door not listening) → null, with NO mint", () => {
     const rt = fakeRt(null);
     expect(mintDoorForMain(rt, "main-old", "t")).toBeNull();
     expect(rt.registry.size).toBe(0);
   });
 
-  test("doorGrantMessage định dạng '[door-grant] <url>'", () => {
+  test("doorGrantMessage formats '[door-grant] <url>'", () => {
     expect(doorGrantMessage("http://x/mcp?caller=t1")).toBe("[door-grant] http://x/mcp?caller=t1");
   });
 });

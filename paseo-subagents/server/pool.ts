@@ -1,11 +1,11 @@
 /**
- * spawn_pool — port pi tool spawn_pool sang plugin door (#145 / plan step 10).
- * Fan-out 2-12 role-typed children, tối đa `concurrency` (1-4, default 4) chạy
- * song song; DETACH — trả về {poolId} ngay, MỘT envelope [pool-report] aggregate
- * tới parent khi mọi child terminal.
+ * spawn_pool — port the pi spawn_pool tool to the plugin door (#145 / plan step 10).
+ * Fan out to 2-12 role-typed children, with at most `concurrency` (1-4, default 4)
+ * running in parallel. DETACH — return {poolId} immediately; ONE aggregate
+ * [pool-report] envelope reaches the parent when every child is terminal.
  *
- * Module thuần (không IO): validate + chia batch + tổng hợp + quyết định deliver.
- * Watcher (đĩa + timer) nằm ở index.server.ts.
+ * Pure module (no I/O): validate, batch, aggregate, and decide delivery.
+ * The watcher (disk + timer) lives in index.server.ts.
  */
 
 export interface PoolItem {
@@ -33,9 +33,9 @@ export interface ValidatedPool {
 export const MAX_POOL_ITEMS = 12;
 export const MIN_POOL_ITEMS = 2;
 export const MAX_POOL_CONCURRENCY = 4;
-/** Pool coi là terminal: idle (xong sạch) hoặc error. */
+/** Pool terminal states: idle (completed cleanly) or error. */
 export const TERMINAL_STATUSES = new Set(["idle", "error"]);
-/** Tuổi tối đa của pool trước khi flush partial — chống pool bất tử. */
+/** Maximum pool age before a partial flush — prevents immortal pools. */
 export const POOL_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 
 export function validatePoolArgs(
@@ -58,7 +58,7 @@ export function validatePoolArgs(
   return { ok: true, pool: { items: clean, concurrency: Math.min(Math.max(c, 1), MAX_POOL_CONCURRENCY) } };
 }
 
-/** Chia items thành batch chạy tuần tự, mỗi batch ≤ concurrency items song song. */
+/** Split items into sequential batches, each with at most `concurrency` parallel items. */
 export function scheduleBatches<T>(items: T[], concurrency: number): T[][] {
   const size = Math.min(Math.max(Math.floor(concurrency) || 1, 1), MAX_POOL_CONCURRENCY);
   const out: T[][] = [];
@@ -71,7 +71,7 @@ export function makePoolId(): string {
 }
 
 export function childTerminal(child: PoolChildState): boolean {
-  if (child.archivedAt) return true; // archive là terminal tuyệt đối
+  if (child.archivedAt) return true; // Archived is always terminal.
   return child.lastStatus !== null && TERMINAL_STATUSES.has(child.lastStatus);
 }
 
@@ -84,7 +84,7 @@ export interface AggregateLine {
   state: string;
 }
 
-/** MỘT dòng tổng hợp cho parent: mọi con terminal, tách ok (idle) / lỗi. */
+/** ONE aggregate message for the parent: all children terminal, split into ok (idle) and failed. */
 export function aggregatePoolReport(
   poolId: string,
   children: PoolChildState[],
@@ -97,8 +97,8 @@ export function aggregatePoolReport(
     return `- ${label}: ${state}`;
   });
   return (
-    `[pool-report] pool ${poolId} hoàn tất: ${children.length} children terminal ` +
-    `(ok ${idle.length}, lỗi/archived ${failed.length}). Báo cáo chi tiết từng con đã tới qua [child-report] riêng.\n` +
+    `[pool-report] pool ${poolId} complete: ${children.length} children terminal ` +
+    `(ok ${idle.length}, failed/archived ${failed.length}). Each child's detailed report arrived separately via [child-report].\n` +
     lines.join("\n")
   );
 }

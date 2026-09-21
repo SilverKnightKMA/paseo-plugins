@@ -1,16 +1,17 @@
 /**
- * L1 door-grant (spec v12 mục 11) — main sinh TRƯỚC plugin không có door.
+ * L1 door grant (spec v12 section 11) — a main created BEFORE the plugin has no door.
  *
- * Door chỉ được inject ở before(agent.create); main cũ (như session tạo
- * 05/09) có record rỗng mcpServers → mãi mãi không có cửa spawn.
- * L1: khi main đó kết thúc 1 turn (agent.turn_ended), plugin mint token MỚI
- * + bind, rồi gửi `[door-grant] <url>` vào chat qua api.agents.ref(id).send().
- * Main dùng URL bằng HTTP POST tools/call; con spawn qua door này báo
- * [child-report] về đúng main.
+ * The door is injected only in before(agent.create); an older main (such as a
+ * session created on 05/09) has an empty mcpServers record and can never spawn.
+ * L1: when that main ends a turn (agent.turn_ended), the plugin mints and binds a
+ * NEW token, then sends `[door-grant] <url>` to the chat through
+ * api.agents.ref(id).send(). The main uses the URL via HTTP POST tools/call;
+ * children spawned through this door report [child-report] to the correct main.
  *
- * Guard: đúng 1 lần/process/agent (GrantLedger); bỏ qua archived; bỏ qua child
- * (label subagent.parent); chỉ grant khi record KHÔNG có door (không đè door
- * của ai). Tự lành sau restart (process mới → ledger rỗng → turn kế grant lại).
+ * Guard: exactly once per process per agent (GrantLedger); skip archived agents
+ * and children (subagent.parent label); grant only when the record has NO door
+ * (never overwrite another door). Self-heals after restart (new process → empty
+ * ledger → grant again on the next turn).
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -20,15 +21,15 @@ import { MAIN_DOOR_KEY, CHILD_DOOR_KEY } from "./adopt.js";
 export const DOOR_GRANT_PREFIX = "[door-grant]";
 
 export interface MainDoorState {
-  /** Tìm thấy record file của agent này không. */
+  /** Whether this agent's record file was found. */
   found: boolean;
   isChild: boolean;
   archived: boolean;
-  /** Record đã có door URL ở key main hoặc child. */
+  /** Whether the record already has a door URL under the main or child key. */
   hasDoor: boolean;
 }
 
-/** Đọc record CHỈ ĐỌC, trả trạng thái door của agent (dùng cho shouldGrant). */
+/** Read a record without modifying it and return the agent's door state (used by shouldGrant). */
 export function readMainDoorState(agentsRoot: string, agentId: string): MainDoorState {
   const empty: MainDoorState = { found: false, isChild: false, archived: false, hasDoor: false };
   if (!existsSync(agentsRoot)) return empty;
@@ -52,28 +53,28 @@ export function readMainDoorState(agentsRoot: string, agentId: string): MainDoor
         hasDoor: Boolean(mainUrl ?? childUrl),
       };
     } catch {
-      return empty; // JSON hỏng: coi như không tìm thấy — lần turn sau đọc lại
+      return empty; // Invalid JSON: treat as not found and read it again next turn.
     }
   }
   return empty;
 }
 
 /**
- * Quyết định grant thuần (testable): grant khi và chỉ khi
- * record tồn tại + là main + chưa archived + record KHÔNG có door.
- * (RAM check + ledger check thuộc wiring — bước #156.)
+ * Pure, testable grant decision: grant if and only if the record exists, belongs
+ * to a main, is not archived, and has NO door. (RAM and ledger checks happen in
+ * the wiring — step #156.)
  */
 export function shouldGrant(state: MainDoorState): boolean {
   return state.found && !state.isChild && !state.archived && !state.hasDoor;
 }
 
-/** Đúng 1 grant mỗi process mỗi agent — tự reset khi plugin restart.
- *  Lưu cả token để L1 (turn_ended message) và L2 (session_open env) DÙNG
- *  CHUNG một token cho cùng agent — không mint đôi. */
+/** Exactly one grant per process per agent — resets when the plugin restarts.
+ *  Store the token so L1 (turn_ended message) and L2 (session_open env) SHARE
+ *  one token for the same agent instead of minting twice. */
 export class GrantLedger {
   private readonly byAgent = new Map<string, string>();
 
-  /** true nếu agent này CHƯA được grant trong process hiện tại. */
+  /** true if this agent has NOT been granted in the current process. */
   allow(agentId: string): boolean {
     return !this.byAgent.has(agentId);
   }
@@ -82,7 +83,7 @@ export class GrantLedger {
     this.byAgent.set(agentId, token);
   }
 
-  /** Token đã grant trong process này (L2 tái dùng), hoặc null. */
+  /** Token granted in this process (reused by L2), or null. */
   tokenFor(agentId: string): string | null {
     return this.byAgent.get(agentId) ?? null;
   }
@@ -93,10 +94,11 @@ export class GrantLedger {
 }
 
 /**
- * L2 env-door (spec v12 mục 11): tính URL door để nhét vào env
- * PASEO_SUBAGENTS_DOOR cho main không-door. Tái dùng token L1 nếu cùng process
- * đã grant; chưa có thì mint mới. Trả null khi không thuộc diện (child/archived/
- * đã-door/không record) hoặc door chưa listen. KHÔNG ghi record.
+ * L2 env door (spec v12 section 11): compute the door URL to place in the
+ * PASEO_SUBAGENTS_DOOR environment variable for a main without a door. Reuse the
+ * L1 token if this process already granted one; otherwise mint a new token. Return
+ * null when ineligible (child/archived/already has a door/no record) or when the
+ * door is not listening. Do NOT write the record.
  */
 export function envDoorUrlForMain(agentsRoot: string, rt: SubagentReplyRuntime, ledger: GrantLedger, agentId: string, title: string): string | null {
   const state = readMainDoorState(agentsRoot, agentId);
@@ -116,12 +118,13 @@ export function envDoorUrlForMain(agentsRoot: string, rt: SubagentReplyRuntime, 
 }
 
 /**
- * Mint token MỚI cho main cũ + bind ngay (biết agentId rồi — khác create-time
- * mint với parentId='(main)'). Trả URL door hoàn chỉnh để gửi vào chat.
+ * Mint a NEW token for an older main and bind it immediately (agentId is already
+ * known, unlike creation-time minting with parentId='(main)'). Return the complete
+ * door URL to send to the chat.
  */
 export function mintDoorForMain(rt: SubagentReplyRuntime, agentId: string, title: string): string | null {
   const port = rt.getPort();
-  if (port === null) return null; // door chưa listen: bỏ qua lần này, turn sau thử lại
+  if (port === null) return null; // Door is not listening: skip now and retry next turn.
   const token = rt.registry.mint(agentId, title, { depth: 0, canSpawn: true });
   rt.registry.bind(token, agentId);
   const url = `http://127.0.0.1:${port}/mcp?caller=${token}`;
@@ -129,7 +132,7 @@ export function mintDoorForMain(rt: SubagentReplyRuntime, agentId: string, title
   return url;
 }
 
-/** Định dạng tin nhắn grant (tiêu đề hằng để phía main/E2E grep dễ). */
+/** Format the grant message (constant prefix makes it easy for the main/E2E tests to grep). */
 export function doorGrantMessage(url: string): string {
   return `${DOOR_GRANT_PREFIX} ${url}`;
 }

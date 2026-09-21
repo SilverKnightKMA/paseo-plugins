@@ -156,28 +156,28 @@ describe("registerEnvDoorHook (L2 #157)", () => {
   });
   const hook = server.calls.find((c) => c.name === "agent.session_open")!.fn;
 
-  test("main không-door nhận env PASEO_SUBAGENTS_DOOR, env cũ giữ nguyên", () => {
+  test("a main without a door receives PASEO_SUBAGENTS_DOOR while preserving its existing env", () => {
     const req: SessionOpenInput = { agentId: "main-1", provider: "pi", reason: "refresh", env: { FOO: "1" } };
     const out = hook({ request: req }) as SessionOpenInput;
     expect(out.env!.FOO).toBe("1");
     expect(out.env![DOOR_ENV]).toBe("http://127.0.0.1:43721/mcp?caller=tok-main-1");
   });
 
-  test("child (env PASEO_PARENT_AGENT_ID) KHÔNG bị đụng", () => {
+  test("a child (PASEO_PARENT_AGENT_ID env) is NOT modified", () => {
     const req: SessionOpenInput = { agentId: "child-1", env: { [PARENT_ENV]: "p" } };
     expect(hook({ request: req })).toBeUndefined();
   });
 
-  test("đã có DOOR_ENV từ caller → không đè", () => {
+  test("an existing caller-supplied DOOR_ENV is not overwritten", () => {
     const req: SessionOpenInput = { agentId: "main-2", env: { [DOOR_ENV]: "http://x/mcp?caller=keep" } };
     expect(hook({ request: req })).toBeUndefined();
   });
 
-  test("không agentId → undefined", () => {
+  test("a missing agentId returns undefined", () => {
     expect(hook({ request: { provider: "pi" } })).toBeUndefined();
   });
 
-  test("envDoorUrlFor trả null (không thuộc diện) → không đổi request", () => {
+  test("envDoorUrlFor returning null (ineligible) leaves the request unchanged", () => {
     const server2 = fakeServer();
     registerEnvDoorHook(server2 as unknown as Parameters<typeof registerEnvDoorHook>[0], r, {
       agentsRoot: "/tmp/none",

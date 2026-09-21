@@ -1,8 +1,9 @@
 /**
- * ask_parent / answer_child (#146 / plan step 11) — kênh hỏi chặn con→cha,
- * theo triết lý detach: ask_parent KHÔNG block HTTP mà trả về ngay sau khi
- * chuyển câu hỏi; câu trả lời tới con dưới dạng tin nhắn [parent-answer]
- * (send sẽ tự wake con). Parent trả lời bằng answer_child trên main door.
+ * ask_parent / answer_child (#146 / plan step 11) — child-to-parent question
+ * channel. Following the detached design, ask_parent does NOT block HTTP: it
+ * returns immediately after forwarding the question. The answer reaches the
+ * child as a [parent-answer] message (send wakes the child automatically).
+ * The parent answers through answer_child on the main door.
  */
 
 export const ASK_TOOL = {
@@ -60,7 +61,7 @@ export function makeQuestionId(): string {
   return `q-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Chỉ đúng CHA của câu hỏi được trả lời (chống con khác chèn câu trả lời). */
+/** Only the question's PARENT may answer (prevents another child from injecting an answer). */
 export function canAnswer(pending: PendingQuestion, callerAgentId: string | undefined): boolean {
   return pending.parentId === callerAgentId;
 }

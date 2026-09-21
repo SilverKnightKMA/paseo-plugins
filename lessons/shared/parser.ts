@@ -22,8 +22,8 @@ export function parseLessonsBlock(text: string): LessonsBlockInfo | null {
 	if (!trimmed.startsWith(LESSONS_PREFIX)) return null;
 	const lines = trimmed.split("\n");
 	const header = lines[0] ?? "";
-	// header variants seen: "(global tier, newest last, auto-injected — these cost nothing to keep):"
-	const ageMatch = /≤\s*(\d+)\s*(?:d|ngày|days?)|(\d+)\s*(?:d|days?)\s*(?:old|max)/i.exec(header);
+	// Observed header variants: "(global tier, newest last, auto-injected — these cost nothing to keep):"
+	const ageMatch = /≤\s*(\d+)\s*(?:d|days?)|(\d+)\s*(?:d|days?)\s*(?:old|max)/i.exec(header);
 	const maxAgeDays = Number(ageMatch?.[1] ?? ageMatch?.[2] ?? 30);
 	const count = lines.filter((l) => LESSON_LINE_RE.test(l.trim())).length;
 	return { count, maxAgeDays: Math.max(1, Math.min(365, maxAgeDays)) };

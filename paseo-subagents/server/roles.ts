@@ -1,13 +1,13 @@
 /**
- * paseo-subagents — role templates (port từ pi-config extensions/subagent-types).
+ * paseo-subagents — role templates (ported from pi-config extensions/subagent-types).
  *
  * Spec v11 (learn/spec-paseo-subagent-plugin-2026-09-20.md):
- * - Role template cố định trong repo (roles/*.md frontmatter + body prompt).
- * - Plugin là source of truth; settings chỉ override tham số chạy
- *   {provider, config, model, thinking} — MỖI ROLE MỘT PROVIDER.
- * - Provider facets builtin: đổi provider kéo theo cả bộ (mode/permission/env).
- * - Prompt role đi qua initialPrompt (user prompt) — KHÔNG set systemPrompt config.
- * - Fail-closed: role lạ / provider thiếu / model thiếu → lỗi rõ ràng, không spawn.
+ * - Role templates are fixed in the repo (roles/*.md frontmatter + body prompt).
+ * - The plugin is the source of truth; settings override only runtime parameters
+ *   {provider, config, model, thinking} — ONE PROVIDER PER ROLE.
+ * - Built-in provider facets: changing providers changes the entire set (mode/permission/env).
+ * - The role prompt goes through initialPrompt (user prompt) — do NOT set systemPrompt config.
+ * - Fail closed: unknown role / missing provider / missing model → explicit error, no spawn.
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -16,14 +16,14 @@ import { BUILTIN_ROLE_MD } from "./role-md.generated.js";
 export interface RoleTemplate {
 	name: string;
 	description: string;
-	tools: string[]; // pi role allowlist (chỉ có ý nghĩa khi provider = pi)
-	systemPrompt: string; // nhét vào initialPrompt, KHÔNG vào systemPrompt config
+	tools: string[]; // Pi role allowlist (meaningful only when provider = pi).
+	systemPrompt: string; // Added to initialPrompt, NOT to systemPrompt config.
 }
 
-/** Ghi đè tham số chạy cho một role (settings file trong repo). */
+/** Runtime parameter overrides for a role (settings file in the repo). */
 export interface RoleOverride {
-	provider: string; // tên gọn: "pi" | "codex" | "claude"
-	config: string; // mức config trong catalog của provider
+	provider: string; // Short name: "pi" | "codex" | "claude".
+	config: string; // Config level in the provider catalog.
 	model?: string;
 	thinking?: string;
 }
@@ -32,15 +32,15 @@ export interface PluginSettings {
 	roles?: Record<string, Partial<RoleOverride>>;
 	poolConcurrency?: number;
 	syncProfilesOnLoad?: boolean;
-	rolePromptChannel?: "user" | "append" | "replace"; // mặc định "user"
+	rolePromptChannel?: "user" | "append" | "replace"; // Defaults to "user".
 }
 
-/** Catalog mức config builtin theo provider (spec mục Catalog nguồn). */
+/** Built-in config-level catalog by provider (spec Source Catalog section). */
 /**
- * modeMap: config level → settings.modeId của daemon.
- * Codex modeIds thật (codex-app-server-agent.js): auto | auto-review | full-access.
- * Claude: plan | acceptEdits | bypassPermissions (best-effort, tên mode bảng provider).
- * Pi: không cần modeId — role allowlist do ext subagent-types giữ (label subagent.role).
+ * modeMap: config level → daemon settings.modeId.
+ * Actual Codex modeIds (codex-app-server-agent.js): auto | auto-review | full-access.
+ * Claude: plan | acceptEdits | bypassPermissions (best effort, provider-table mode names).
+ * Pi: no modeId needed — ext subagent-types owns the role allowlist (subagent.role label).
  */
 export const PROVIDER_CATALOGS: Record<string, {
 	configs: string[];
@@ -50,7 +50,7 @@ export const PROVIDER_CATALOGS: Record<string, {
 }> = {
 	pi: {
 		configs: ["scout", "researcher", "worker", "mermaid-maker", "svg-maker"],
-		defaultProviderEntry: "pi/cli-openai", // plugin tự map tên gọn → entry thật
+		defaultProviderEntry: "pi/cli-openai", // Plugin maps the short name to the actual entry.
 	},
 	codex: {
 		configs: ["auto", "review", "full"],
@@ -61,12 +61,12 @@ export const PROVIDER_CATALOGS: Record<string, {
 		configs: ["plan", "acceptEdits", "bypassPermissions"],
 		defaultProviderEntry: "claude",
 		modeMap: { plan: "plan", acceptEdits: "acceptEdits", bypassPermissions: "bypassPermissions" },
-		// G4 live: claude default HTTP MCP tool-call ~45s — nâng trần cho spawn/pool/ask
+		// G4 live: Claude's default HTTP MCP tool call is ~45s — raise the limit for spawn/pool/ask.
 		env: { MCP_TOOL_TIMEOUT: "300000" },
 	},
 };
 
-/** Parse một file role markdown (frontmatter + body) — parity parseRoleMd pi ext. */
+/** Parse a role markdown file (frontmatter + body) — matches pi ext parseRoleMd. */
 export function parseRoleMd(filename: string, raw: string): RoleTemplate | null {
 	const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
 	if (!match) return null;
@@ -90,7 +90,7 @@ export function parseRoleMd(filename: string, raw: string): RoleTemplate | null 
 	};
 }
 
-/** Load toàn bộ role template — mặc định từ BUILTIN nhúng trong code (spec v5: template cố định, không phụ thuộc filesystem runtime). */
+/** Load all role templates — default to the BUILTIN embedded in code (spec v5: fixed templates, no runtime filesystem dependency). */
 export function loadRoleTemplates(): Map<string, RoleTemplate> {
 	const roles = new Map<string, RoleTemplate>();
 	for (const [name, md] of Object.entries(BUILTIN_ROLE_MD)) {
@@ -100,7 +100,7 @@ export function loadRoleTemplates(): Map<string, RoleTemplate> {
 	return roles;
 }
 
-/** Biến thể cho test/dev: đọc từ thư mục roles/ (vd repo đang phát triển). */
+/** Test/development variant: read from the roles/ directory (for example, while developing the repo). */
 export function loadRoleTemplatesFromDir(rolesDir: string): Map<string, RoleTemplate> {
 	const roles = new Map<string, RoleTemplate>();
 	if (!existsSync(rolesDir)) return roles;
@@ -118,16 +118,16 @@ export function loadRoleTemplatesFromDir(rolesDir: string): Map<string, RoleTemp
 
 export interface ResolvedRole {
 	template: RoleTemplate;
-	providerEntry: string; // entry thật của daemon, vd "pi/cli-openai"
+	providerEntry: string; // Actual daemon entry, for example "pi/cli-openai".
 	config: string;
 	model: string | undefined;
 	thinking: string | undefined;
-	env: Record<string, string>; // facet env đi kèm provider
-	modeId: string | undefined; // config level → modeId daemon (pi: undefined)
+	env: Record<string, string>; // Facet environment variables bundled with the provider.
+	modeId: string | undefined; // Config level → daemon modeId (pi: undefined).
 	channel: "user" | "append" | "replace";
 }
 
-/** Mặc định tham số chạy cho từng role (spec settings ví dụ — repo wins). */
+/** Default runtime parameters for each role (example spec settings — repo wins). */
 export const DEFAULT_ROLE_OVERRIDES: Record<string, RoleOverride> = {
 	scout: { provider: "pi", config: "scout", model: "fci/deepseek-v4-flash", thinking: "low" },
 	researcher: { provider: "pi", config: "researcher", model: "fci/deepseek-v4-flash", thinking: "medium" },
@@ -137,7 +137,7 @@ export const DEFAULT_ROLE_OVERRIDES: Record<string, RoleOverride> = {
 };
 
 /**
- * Resolve role → cấu hình spawn. Fail-closed trả { error } thay vì đoán bừa.
+ * Resolve role → spawn config. Fail closed with { error } instead of guessing.
  */
 export function resolveRole(
 	roleName: string,
@@ -159,7 +159,7 @@ export function resolveRole(
 		return { ok: false, error: `role '${roleName}': config '${override.config ?? "(missing)"}' not in ${provider} catalog [${facet.configs.join(", ")}]` };
 	}
 	if (!override.model) {
-		return { ok: false, error: `role '${roleName}': no model pinned (settings phải có model cho provider ${provider}) — fail-closed, không tự chọn` };
+		return { ok: false, error: `role '${roleName}': no model pinned (settings must specify a model for provider ${provider}) — fail-closed, no automatic selection` };
 	}
 	return {
 		ok: true,
@@ -176,7 +176,7 @@ export function resolveRole(
 	};
 }
 
-/** initialPrompt = role prompt + --- + TASK (kênh "user" — spec v11). */
+/** initialPrompt = role prompt + --- + TASK ("user" channel — spec v11). */
 export function composeInitialPrompt(role: ResolvedRole, task: string): string {
 	return [role.template.systemPrompt, "---", `TASK:\n${task}`].filter(Boolean).join("\n\n");
 }

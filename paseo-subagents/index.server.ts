@@ -42,7 +42,7 @@ import {
 import { doorGrantMessage, envDoorUrlForMain, GrantLedger, mintDoorForMain, readMainDoorState, shouldGrant } from "./server/grant.js";
 import { adoptFromRecord } from "./server/adopt.js";
 
-/** Max depth tuyệt đối (spec mục 6): main=0 → con=1 → cháu=2. */
+/** Absolute maximum depth (spec section 6): main=0 → child=1 → grandchild=2. */
 const MAX_DEPTH = 2;
 
 /** Structural slice of the SDK API the door needs (avoids importing
@@ -80,8 +80,8 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     }
   };
 
-  // Repo wins (spec v6): settings.json trong repo plugin là source of truth,
-  // nạp 1 lần lúc load. Env PASEO_SUBAGENTS_SETTINGS chỉ đường khác nếu cần.
+  // Repo wins (spec v6): settings.json in the plugin repo is the source of truth,
+  // loaded once at startup. PASEO_SUBAGENTS_SETTINGS provides an alternate path if needed.
   const settings: PluginSettings = (() => {
     const p =
       process.env.PASEO_SUBAGENTS_SETTINGS ??
@@ -92,16 +92,17 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       console.log(`[paseo-subagents] settings loaded from ${p}`);
       return parsed;
     } catch (err) {
-      console.log(`[paseo-subagents] settings load failed (${err instanceof Error ? err.message : String(err)}) — dùng default`);
+      console.log(`[paseo-subagents] settings load failed (${err instanceof Error ? err.message : String(err)}) — using defaults`);
       return {};
     }
   })();
 
   // ── Idle-archive reminder (#141 / plan step 7) ─────────────────────────
-  // Daemon-side port của #129: quét record đĩa mỗi 60s, nhắc parent qua
-  // đúng kênh deliver khi mọi con (label subagent.parent) idle ≥ N phút.
-  // REMIND, không auto-archive. 0 = tắt. Chỉ track con của plugin để không
-  // đôi lời với pi ext (nó tự nhắc con của nó trong process pi).
+  // Daemon-side port of #129: scan disk records every 60s and remind the parent
+  // through the proper delivery channel when every child (subagent.parent label)
+  // has been idle for at least N minutes. REMIND, do not auto-archive. 0 = disabled.
+  // Track only this plugin's children to avoid duplicate reminders with pi ext,
+  // which reminds its own children in the pi process.
   const remindMinutes = (() => {
     const raw = Number(process.env.PASEO_SUBAGENTS_ARCHIVE_REMIND_MINUTES);
     return Number.isFinite(raw) && raw >= 0 ? Math.min(Math.round(raw), 1440) : DEFAULT_REMIND_MINUTES;
@@ -111,7 +112,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
 
   const scanIdleArchive = async (): Promise<void> => {
     const api = paseoApi;
-    if (!api) return; // chưa có lifecycle context — chờ lượt quét sau
+    if (!api) return; // No lifecycle context yet — wait for the next scan.
     try {
       const records = readAgentRecords(agentsRoot);
       const byId = new Map(records.map((r) => [r.id, r]));
@@ -119,7 +120,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       for (const r of records) {
         if (r.labels?.["subagent.spawner"] !== "paseo-subagents") continue;
         const p = r.labels?.["subagent.parent"];
-        // không nhắc parent đã archive (send sẽ auto-unarchive — tránh đánh thức)
+        // Do not remind archived parents (send would auto-unarchive and wake them).
         if (p && p !== "(main)" && !byId.get(p)?.archivedAt) parents.add(p);
       }
       for (const parent of parents) {
@@ -129,10 +130,10 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
         if (!reminderArmed(lastRemindByParent.get(parent), Date.now())) continue;
         lastRemindByParent.set(parent, Date.now());
         console.log(
-          `[paseo-subagents] idle-archive reminder: ${children.length} con của ${parent} idle ≥${remindMinutes}m`,
+          `[paseo-subagents] idle-archive reminder: ${children.length} children of ${parent} idle for ≥${remindMinutes}m`,
         );
         await api.agents.ref(parent).send(
-          `[housekeeping] ${children.length} subagents đã idle ≥${remindMinutes} phút, không con nào đang chạy/parked. Archive để giữ danh sách gọn (soft-delete — gửi tin cho con sẽ tự unarchive):\n${r.command}`,
+          `[housekeeping] ${children.length} subagents have been idle for ≥${remindMinutes} minutes, and none are running or parked. Archive them to keep the list tidy (soft delete — sending a message to a child automatically unarchives it):\n${r.command}`,
         );
       }
     } catch (err) {
@@ -148,7 +149,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       : null;
   if (idleTimer) idleTimer.unref?.();
   console.log(
-    `[paseo-subagents] idle-archive scanner ${remindMinutes > 0 ? `armed (${remindMinutes}m, quét 60s/lần)` : "disabled (0)"}`,
+    `[paseo-subagents] idle-archive scanner ${remindMinutes > 0 ? `armed (${remindMinutes}m, scans every 60s)` : "disabled (0)"}`,
   );
 
   const spawnChild = async (
@@ -159,7 +160,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     const api = paseoApi;
     if (!api) return { error: "paseo API not captured yet — daemon lifecycle context missing" };
     if (caller.depth >= MAX_DEPTH) {
-      return { error: `depth cap: caller depth=${caller.depth}, max=${MAX_DEPTH} (spec mục 6 — kìm đệ quy)` };
+      return { error: `depth cap: caller depth=${caller.depth}, max=${MAX_DEPTH} (spec section 6 — limits recursion)` };
     }
     const resolved = resolveRole(args.role, settings);
     if (!resolved.ok) return { error: resolved.error };
@@ -167,21 +168,22 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     const title = args.name ?? `${args.role}: ${args.task.slice(0, 40)}`;
     const initialPrompt = composeInitialPrompt(role, args.task);
 
-    // SpawnFn tự mint door scoped cho child (spec 4.1): không dựa env carrier —
-    // env qua SDK agents.create không tới được hook before(agent.create) (E2E 2026-09-20: child nhận nhầm main door).
+    // SpawnFn mints the child's scoped door directly (spec 4.1), without relying on
+    // an environment carrier. Env values passed through SDK agents.create do not reach
+    // the before(agent.create) hook (E2E 2026-09-20: child received the wrong main door).
     const parentId = caller.boundAgentId;
     if (!parentId) {
-      return { error: "main door token chưa bind agentId (agent.created chưa về) — thử lại sau giây lát" };
+      return { error: "main door token has not been bound to agentId (agent.created has not arrived) — retry shortly" };
     }
     const port = replyServer?.port ?? null;
-    if (port === null) return { error: "reply door chưa listen — thử lại sau giây lát" };
+    if (port === null) return { error: "reply door is not listening — retry shortly" };
     const token = registry.mint(parentId, title, { depth: caller.depth + 1, canSpawn: false, role: args.role });
     const childDoorUrl = `http://127.0.0.1:${port}/mcp?caller=${token}`;
 
     const labels: Record<string, string> = {
-      // idle-archive: plugin chỉ nhắc con CHÍNH NÓ spawn — pi ext children
-      // cũng mang subagent.parent nên thiếu label này sẽ đôi lời (E2E 18:03:
-      // parent cf76ad71 nhận reminder từ cả 2 engine).
+      // idle-archive: the plugin reminds only children IT spawned. Pi ext children
+      // also carry subagent.parent, so omitting this label causes duplicate reminders
+      // (E2E 18:03: parent cf76ad71 received reminders from both engines).
       "subagent.spawner": "paseo-subagents",
       "subagent.role": args.role,
       "subagent.depth": String(caller.depth + 1),
@@ -198,7 +200,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
             paseo: { type: "http" as const, url: childDoorUrl, alwaysLoad: true },
           },
         },
-        cwd: process.cwd(), // TODO(E2E): lấy cwd của caller agent khi slice mở rộng
+        cwd: process.cwd(), // TODO(E2E): use the caller agent's cwd when the slice is extended.
         prompt: initialPrompt,
         labels,
         parent: parentId,
@@ -213,9 +215,9 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   const spawnFn: SpawnFn = (caller, args) => spawnChild(caller, args);
 
   // ── spawn_pool (#145 / plan step 10): fan-out 2-12 children, ≤4 song song,
-  // một envelope [pool-report] aggregate khi mọi con terminal. State pool nằm
-  // trong RAM plugin process (đủ cho v1 — restart daemon mất pool đang chạy,
-  // con vẫn tự báo [child-report] riêng nên không mất dữ liệu).
+  // one aggregate [pool-report] envelope when every child is terminal. Pool state
+  // lives in the plugin process's RAM (enough for v1 — restarting the daemon loses
+  // active pools, but each child still sends its own [child-report], so no data is lost).
   const pools = new Map<
     string,
     { parentId: string; createdAt: number; childIds: string[]; titles: Map<string, string> }
@@ -235,14 +237,15 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
         }
       }
     }
-    if (childIds.length === 0) return { error: "spawn_pool: mọi item spawn thất bại (xem log plugin)" };
+    if (childIds.length === 0) return { error: "spawn_pool: every item failed to spawn (see plugin log)" };
     pools.set(poolId, { parentId: caller.boundAgentId ?? "", createdAt: Date.now(), childIds, titles });
-    console.log(`[paseo-subagents] spawn_pool ${poolId}: ${childIds.length}/${args.items.length} con (parent ${caller.boundAgentId}, concurrency ${args.concurrency ?? 4})`);
+    console.log(`[paseo-subagents] spawn_pool ${poolId}: ${childIds.length}/${args.items.length} children (parent ${caller.boundAgentId}, concurrency ${args.concurrency ?? 4})`);
     return { poolId, spawned: childIds.length };
   };
 
-  // Watcher pool: quét record đĩa 30s/lần; mọi con terminal (idle/error/archived)
-  // → gửi MỘT [pool-report] aggregate rồi quên pool. Pool >2h → flush partial.
+  // Pool watcher: scan disk records every 30s; when every child is terminal
+  // (idle/error/archived), send ONE aggregate [pool-report] and forget the pool.
+  // Pool older than 2h → partial flush.
   const scanPools = async (): Promise<void> => {
     const api = paseoApi;
     if (!api || pools.size === 0) return;
@@ -250,7 +253,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     try {
       records = readAgentRecords(agentsRoot);
     } catch {
-      return; // đĩa lỗi tạm — quét lượt sau
+      return; // Temporary disk error — retry on the next scan.
     }
     const byId = new Map(records.map((r) => [r.id, r]));
     for (const [poolId, pool] of [...pools]) {
@@ -261,13 +264,13 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       const aged = Date.now() - pool.createdAt > POOL_MAX_AGE_MS;
       if (!allTerminal(children) && !aged) continue;
       if (children.length === 0) {
-        pools.delete(poolId); // record biến mất (đã delete) — không đợi nữa
+        pools.delete(poolId); // Records disappeared (deleted) — stop waiting.
         continue;
       }
       const text = aggregatePoolReport(poolId, children, (c) => ({
         label: pool.titles.get(c.id) ?? c.id,
         state: c.archivedAt ? "archived" : (c.lastStatus ?? "unknown"),
-      })) + (aged && !allTerminal(children) ? "\n(pool vượt 2h — flush partial, các con chưa terminal sẽ tự báo [child-report] riêng)" : "");
+      })) + (aged && !allTerminal(children) ? "\n(pool exceeded 2h — partial flush; non-terminal children will send their own [child-report] separately)" : "");
       pools.delete(poolId);
       try {
         console.log(`[paseo-subagents] pool-report ${poolId} -> parent ${pool.parentId}`);
@@ -283,20 +286,20 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   poolTimer.unref?.();
 
   // ── ask_parent / answer_child (#146 / plan step 11) — pending RAM,
-  // restart mất câu hỏi treo (con có thể hỏi lại — fail-honest).
+  // Restarting loses pending questions (the child can ask again — fail-honest).
   const pendingQuestions = new Map<string, PendingQuestion>();
   const askFn: AskFn = async (caller, parentId, question) => {
     const api = paseoApi;
-    if (!api) return { error: "paseo API not captured yet — thử lại sau" };
+    if (!api) return { error: "paseo API not captured yet — retry later" };
     const childId = caller.boundAgentId;
-    if (!childId) return { error: "door token chưa bind agentId — thử lại sau giây lát" };
+    if (!childId) return { error: "door token has not been bound to agentId — retry shortly" };
     const questionId = makeQuestionId();
     try {
       await api.agents
         .ref(parentId)
-        .send(`[child-question] con (${childId.slice(0, 8)}) hỏi: ${question}\nTrả lời bằng tool answer_child với questionId=${questionId}`);
+        .send(`[child-question] child (${childId.slice(0, 8)}) asks: ${question}\nAnswer with the answer_child tool using questionId=${questionId}`);
       pendingQuestions.set(questionId, { questionId, childId, parentId, createdAt: Date.now() });
-      console.log(`[paseo-subagents] ask_parent ${questionId}: con ${childId.slice(0, 8)} -> parent ${parentId.slice(0, 8)}`);
+      console.log(`[paseo-subagents] ask_parent ${questionId}: child ${childId.slice(0, 8)} -> parent ${parentId.slice(0, 8)}`);
       return { questionId };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
@@ -306,8 +309,8 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     const api = paseoApi;
     if (!api) return { error: "paseo API not captured yet" };
     const pending = pendingQuestions.get(questionId);
-    if (!pending) return { error: `questionId '${questionId}' không tồn tại (đã trả lời hoặc plugin restart) — con sẽ hỏi lại nếu còn cần` };
-    if (!canAnswer(pending, caller.boundAgentId)) return { error: "chỉ parent của câu hỏi mới được trả lời" };
+    if (!pending) return { error: `questionId '${questionId}' does not exist (already answered or plugin restarted) — the child will ask again if needed` };
+    if (!canAnswer(pending, caller.boundAgentId)) return { error: "only the question's parent may answer" };
     try {
       await api.agents.ref(pending.childId).send(`[parent-answer] ${answer}`);
       pendingQuestions.delete(questionId);
@@ -321,8 +324,9 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   let replyServer: ReplyServerHandle | null = null;
   listenReplyServer({
     registry,
-    // spec v12 pa1 (#158 / plan 8/20): verify-miss → dò record đĩa chứa đúng
-    // token, đăng ký lại vào RAM. Hatch PASEO_SUBAGENTS_ADOPT=0 tắt (401 như v1.0.69).
+    // spec v12 pa1 (#158 / plan 8/20): verification miss → find the disk record
+    // containing the exact token and register it in RAM again. The
+    // PASEO_SUBAGENTS_ADOPT=0 hatch disables this path (401 as in v1.0.69).
     adopt: (token) => adoptFromRecord(agentsRoot, token, registry) !== null,
     deliver: (parentId, title, prompt) => {
       const api = paseoApi;
@@ -348,8 +352,9 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
 
   const offCreated = server.on("agent.created", (event, context) => {
     capturePaseo(context.paseo);
-    // Event chỉ mang metadata (PluginHookAgent không có config) — đọc record file để lấy door URL đã inject,
-    // rồi bind token → agentId (main mint token TRƯỚC khi có id — spec 4.2).
+    // The event carries only metadata (PluginHookAgent has no config). Read the
+    // record file to get the injected door URL, then bind token → agentId (main
+    // mints the token BEFORE it has an ID — spec 4.2).
     try {
       const id = event.agent.id;
       const agentsRoot = join(homedir(), ".paseo", "agents");
@@ -370,31 +375,32 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
           console.log(`[paseo-subagents] bound main door token -> agent ${id} ('${event.agent.title ?? "untitled"}')`);
         }
       } else {
-        console.log(`[paseo-subagents] agent.created '${event.agent.title ?? id}': no door URL in record — bỏ bind (agent không do plugin door hóa)`);
+        console.log(`[paseo-subagents] agent.created '${event.agent.title ?? id}': no door URL in record — skipping bind (agent was not given a door by the plugin)`);
       }
     } catch (err) {
       console.log(`[paseo-subagents] bind main door failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
-  // Scanner cần paseoApi nhưng capture lười qua agent.created là mong manh:
-  // sau restart, nếu không có agent MỚI nào được tạo thì scanner chết ngắt
-  // (E2E 17:51: reminder không nổ dù grace đã hết). Bắt thêm từ các event
-  // hay gặp nhất — mọi turn kết thúc của BẤT KỲ agent nào cũng đủ.
-  // Event lạ (runtime từ chối tên) KHÔNG được giết plugin — bắt từng cái.
+  // The scanner needs paseoApi, but lazily capturing it through agent.created is
+  // fragile: after restart, if no NEW agent is created, the scanner remains inert
+  // (E2E 17:51: the reminder did not fire after the grace period). Also capture it
+  // from the most common events — any agent ending any turn is enough. Unknown
+  // events (names rejected by the runtime) must NOT kill the plugin, so catch each one.
   const safeOn = (name: string, fn: unknown): (() => void) => {
     try {
       const off = (server.on as unknown as (n: string, f: unknown) => () => void)(name, fn);
       return typeof off === "function" ? off : () => {};
     } catch (err) {
-      console.log(`[paseo-subagents] event '${name}' không đăng ký được: ${err instanceof Error ? err.message : String(err)} — bỏ qua`);
+      console.log(`[paseo-subagents] could not register event '${name}': ${err instanceof Error ? err.message : String(err)} — skipping`);
       return () => {};
     }
   };
-  // ── L1 door-grant (spec v12 mục 11 · #156 / plan 6/20) ────────────────
-  // Main sinh TRƯỚC plugin không có door trong record; khi main đó kết thúc
-  // turn, plugin mint token mới + gửi '[door-grant] <url>' vào chat. Guard:
-  // đúng 1 lần/process/agent (GrantLedger), chỉ main không-door chưa archived.
-  // Tự lành sau restart (ledger RAM rỗng → turn kế grant lại). KHÔNG ghi record.
+  // ── L1 door grant (spec v12 section 11 · #156 / plan 6/20) ─────────────
+  // A main created BEFORE the plugin has no door in its record. When that main
+  // ends a turn, the plugin mints a new token and sends '[door-grant] <url>' to
+  // the chat. Guard: exactly once per process per agent (GrantLedger), only for
+  // unarchived mains without doors. Self-heals after restart (empty RAM ledger →
+  // grant again next turn). Do NOT write the record.
   const grantLedger = new GrantLedger();
   const onTurnEnded = (event: unknown, context: { paseo?: unknown }): void => {
     if (context?.paseo) capturePaseo(context.paseo as PaseoSendSlice, "turn_ended");
@@ -403,17 +409,17 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       const id = agent?.id;
       if (!id || !grantLedger.allow(id)) return;
       const state = readMainDoorState(agentsRoot, id);
-      if (!shouldGrant(state)) return; // đã có door / child / archived / không record
+      if (!shouldGrant(state)) return; // Already has a door / child / archived / no record.
       const api = paseoApi;
-      if (!api) return; // chưa có lifecycle context — turn sau thử lại
+      if (!api) return; // No lifecycle context yet — retry next turn.
       const url = mintDoorForMain({ registry, getPort: () => replyServer?.port ?? null, allowFull, log: (m) => console.log(m) }, id, agent.title ?? "main");
-      if (!url) return; // door chưa listen — turn sau thử lại
+      if (!url) return; // Door is not listening — retry next turn.
       const grantedToken = new URL(url).searchParams.get("caller");
-      if (grantedToken) grantLedger.mark(id, grantedToken); // L2 tái dùng đúng token này
+      if (grantedToken) grantLedger.mark(id, grantedToken); // L2 reuses this exact token.
       void api.agents
         .ref(id)
         .send(doorGrantMessage(url))
-        .then(() => console.log(`[paseo-subagents] door-grant đã gửi -> agent ${id} (main không-door, L1)`))
+        .then(() => console.log(`[paseo-subagents] door grant sent -> agent ${id} (main without a door, L1)`))
         .catch((err: unknown) => console.log(`[paseo-subagents] door-grant send failed (${id}): ${err instanceof Error ? err.message : String(err)}`));
     } catch (err) {
       console.log(`[paseo-subagents] door-grant check failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -432,8 +438,8 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   });
 
   // L2 env-door (spec v12 · #157 / plan 7/20): session_open (create/resume/
-  // refresh/import) gán PASEO_SUBAGENTS_DOOR cho main không-door. Tái dùng
-  // token L1 đã grant trong process này (envDoorUrlFor đọc ledger chung).
+  // refresh/import) assigns PASEO_SUBAGENTS_DOOR to a main without a door. Reuse
+  // the L1 token granted in this process (envDoorUrlFor reads the shared ledger).
   const offEnvDoor = registerEnvDoorHook(server, {
     registry,
     getPort: () => replyServer?.port ?? null,

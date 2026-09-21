@@ -42,7 +42,7 @@ const REPLY_TOOL = {
   },
 };
 
-/** spawn_subagent — chỉ hiện với caller có canSpawn (spec v11 mục 4.3: lọc theo caller). */
+/** spawn_subagent — visible only to callers with canSpawn (spec v11 section 4.3: filter by caller). */
 export const SPAWN_TOOL = {
   name: "spawn_subagent",
   description:
@@ -62,7 +62,7 @@ export const SPAWN_TOOL = {
   },
 };
 
-/** spawn_pool — fan-out 2-12 children, ≤4 song song (#145 / plan step 10). */
+/** spawn_pool — fan out to 2-12 children, at most 4 in parallel (#145 / plan step 10). */
 export const POOL_TOOL = {
   name: "spawn_pool",
   description:
@@ -99,7 +99,7 @@ export interface SpawnArgs {
   name?: string;
 }
 
-/** Caller capability snapshot cần cho dispatch (lấy từ CallerToken). */
+/** Caller capability snapshot used for dispatch (from CallerToken). */
 export interface CallerCaps {
   canSpawn: boolean;
   depth: number;
@@ -113,14 +113,14 @@ export type SpawnPoolFn = (
   args: { items: PoolItem[]; concurrency?: number },
 ) => Promise<{ poolId: string; spawned: number } | { error: string }>;
 
-/** Con hỏi cha: trả về questionId — KHÔNG block chờ câu trả lời (detach). */
+/** Child asks parent: return questionId without blocking for the answer (detached). */
 export type AskFn = (
   caller: CallerCaps,
   parentId: string,
   question: string,
 ) => Promise<{ questionId: string } | { error: string }>;
 
-/** Cha trả lời con: đẩy [parent-answer] vào session con. */
+/** Parent answers child: push [parent-answer] to the child's session. */
 export type AnswerFn = (
   caller: CallerCaps,
   questionId: string,
@@ -155,15 +155,16 @@ export async function startReplyServer(opts: {
 export async function listenReplyServer(opts: {
   registry: TokenRegistry;
   deliver: DeliverFn;
-  /** spec v12 pa1: gọi khi verify-miss — trả true nếu token được adopt từ đĩa. */
+  /** spec v12 pa1: called on verification miss — returns true if the token was adopted from disk. */
   adopt?: (token: string) => boolean;
   spawn?: SpawnFn;
   spawnPool?: SpawnPoolFn;
   ask?: AskFn;
   answer?: AnswerFn;
   host?: string;
-  /** #147: nếu deliver chưa xong sau số ms này, ack "queued" ngay — send()
-   * chặn tới khi parent hết turn (8+ phút thật với parent mid-turn). */
+  /** #147: if delivery has not finished after this many milliseconds, immediately
+   * acknowledge "queued" — send() blocks until the parent ends its turn (an actual
+   * 8+ minute hang while the parent was mid-turn). */
   deliverAckMs?: number;
 }): Promise<ReplyServerHandle> {
   const host = opts.host ?? "127.0.0.1";
@@ -215,15 +216,16 @@ async function handle(
   const tokenParam = url.searchParams.get("caller");
   let caller = opts.registry.verify(tokenParam);
   if (!caller && tokenParam && opts.adopt && process.env.PASEO_SUBAGENTS_ADOPT !== "0") {
-    // spec v12 pa1: verify-miss sau restart — token nằm trong record agent trên
-    // đĩa (URL ghi lúc create). Adopt đăng ký lại CÙNG token vào RAM; request
-    // này được phục vụ luôn (verify lần 2), KHÔNG cần client retry.
+    // spec v12 pa1: verification miss after restart — the token remains in the
+    // on-disk agent record (URL written at creation). Adopt registers the SAME
+    // token in RAM again; serve this request immediately (second verification),
+    // with NO client retry required.
     try {
       if (opts.adopt(tokenParam)) {
         caller = opts.registry.verify(tokenParam);
       }
     } catch {
-      // adopt fail (registry đầy / lỗi đĩa) — rơi xuống 401 như cũ
+      // Adoption failed (full registry or disk error) — fall through to 401 as before.
     }
   }
   if (!caller) {
@@ -282,7 +284,7 @@ interface DispatchCtx {
   opts: { registry: TokenRegistry; deliver: DeliverFn; spawn?: SpawnFn; spawnPool?: SpawnPoolFn; ask?: AskFn; answer?: AnswerFn; deliverAckMs?: number };
 }
 
-/** #147: mặc định nhường ack sau 2s khi parent mid-turn. */
+/** #147: by default, return the acknowledgement after 2s when the parent is mid-turn. */
 export const DELIVER_ACK_MS = 2000;
 
 async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unknown> {
@@ -307,8 +309,8 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
     case "ping":
       return { jsonrpc: "2.0", id: id, result: {} };
     case "tools/list": {
-      // Lọc theo caller (spec 4.3): canSpawn=false chỉ thấy reply_to_parent.
-      // Con (canSpawn=false): reply + ask_parent. Cha (canSpawn): reply + spawn + pool + answer_child.
+      // Filter by caller (spec 4.3): canSpawn=false sees only reply_to_parent.
+      // Child (canSpawn=false): reply + ask_parent. Parent (canSpawn): reply + spawn + pool + answer_child.
       const tools = ctx.caps.canSpawn
         ? [REPLY_TOOL, SPAWN_TOOL, POOL_TOOL, ANSWER_TOOL]
         : [REPLY_TOOL, ASK_TOOL];
@@ -321,11 +323,13 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
         if (typeof args.prompt !== "string" || args.prompt.length === 0) {
           return jsonRpcError(id, -32900, "invalid arguments: 'prompt' (non-empty string) is required");
         }
-        // #147: send() chặn tới khi parent hết turn (bug thật: researcher
-        // claude 037b2f53 treo HTTP >8 phút không tool_result trong lúc cha
-        // 27dea12f mid-turn). Đua deliver với ack-hạn: xong nhanh → "delivered";
-        // lỗi nhanh → isError (contract cũ giữ nguyên); quá hạn → ack queued,
-        // promise chạy tiếp nền, lỗi muộn log daemon — không mất, không chặn con.
+        // #147: send() blocks until the parent ends its turn (actual bug: researcher
+        // claude 037b2f53 hung over HTTP for more than 8 minutes without a tool_result
+        // while parent 27dea12f was mid-turn). Race delivery against the acknowledgement
+        // deadline: quick success → "delivered"; quick failure → isError (preserve the
+        // existing contract); deadline exceeded → acknowledge queued while the promise
+        // continues in the background. Late failures are logged by the daemon, so the
+        // report is not lost and the child is not blocked.
         const ackMs = ctx.opts.deliverAckMs ?? DELIVER_ACK_MS;
         const promptText: string = args.prompt;
         const inflight = Promise.resolve().then(() => ctx.opts.deliver(ctx.parentId, ctx.title, promptText));
@@ -372,7 +376,7 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
           return jsonRpcError(id, -32601, `spawn_subagent is not enabled on this door`);
         }
         if (!ctx.caps.canSpawn) {
-          return jsonRpcError(id, -32901, `spawn_subagent refused: this caller's role cannot spawn (canSpawn=false, spec mục 6)`);
+          return jsonRpcError(id, -32901, `spawn_subagent refused: this caller's role cannot spawn (canSpawn=false, spec section 6)`);
         }
         const args = (params.arguments ?? {}) as Partial<SpawnArgs>;
         if (typeof args.role !== "string" || typeof args.task !== "string" || args.task.length === 0) {
@@ -387,7 +391,7 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
             jsonrpc: "2.0",
             id: id,
             result: {
-              content: [{ type: "text", text: JSON.stringify({ agentId: result.agentId, status: "running", note: "kết quả sẽ tới qua envelope [child-report] khi child xong (detach — spec v11 mục 3)" }) }],
+              content: [{ type: "text", text: JSON.stringify({ agentId: result.agentId, status: "running", note: "the result will arrive in a [child-report] envelope when the child finishes (detached — spec v11 section 3)" }) }],
               isError: false,
             },
           };
@@ -400,7 +404,7 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
         const spawnPool = ctx.opts.spawnPool;
         if (!spawnPool) return jsonRpcError(id, -32601, `spawn_pool is not enabled on this door`);
         if (!ctx.caps.canSpawn) {
-          return jsonRpcError(id, -32901, `spawn_pool refused: this caller's role cannot spawn (canSpawn=false, spec mục 6)`);
+          return jsonRpcError(id, -32901, `spawn_pool refused: this caller's role cannot spawn (canSpawn=false, spec section 6)`);
         }
         const args = (params.arguments ?? {}) as { items?: unknown; concurrency?: unknown };
         const v = validatePoolArgs(args.items, args.concurrency);
@@ -416,7 +420,7 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
             result: {
               content: [{
                 type: "text",
-                text: JSON.stringify({ poolId: result.poolId, spawned: result.spawned, status: "running", note: "MỘT envelope [pool-report] aggregate sẽ tới khi mọi child terminal; từng con tự gửi [child-report] riêng (detach — spec v11 mục 3)" }),
+                text: JSON.stringify({ poolId: result.poolId, spawned: result.spawned, status: "running", note: "ONE aggregate [pool-report] envelope will arrive when every child is terminal; each child sends its own [child-report] separately (detached — spec v11 section 3)" }),
               }],
               isError: false,
             },
@@ -438,7 +442,7 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
           }
           return {
             jsonrpc: "2.0", id: id,
-            result: { content: [{ type: "text", text: `câu hỏi đã tới parent (questionId ${r.questionId}) — KHÔNG đợi: [parent-answer] sẽ tới như tin nhắn mới đánh thức con. Kết thúc lượt hoặc làm tiếp việc khác.` }], isError: false },
+            result: { content: [{ type: "text", text: `question delivered to parent (questionId ${r.questionId}) — do NOT wait: [parent-answer] will arrive as a new message and wake the child. End the turn or continue with other work.` }], isError: false },
           };
         } catch (err) {
           return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `ask_parent failed: ${err instanceof Error ? err.message : String(err)}` }], isError: true } };
@@ -447,7 +451,7 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
       if (params.name === ANSWER_TOOL.name) {
         const answer = ctx.opts.answer;
         if (!answer) return jsonRpcError(id, -32601, `answer_child is not enabled on this door`);
-        if (!ctx.caps.canSpawn) return jsonRpcError(id, -32901, `answer_child refused: chỉ parent (canSpawn=true) được trả lời con`);
+        if (!ctx.caps.canSpawn) return jsonRpcError(id, -32901, `answer_child refused: only the parent (canSpawn=true) may answer a child`);
         const a = (params.arguments ?? {}) as { questionId?: unknown; answer?: unknown };
         const v = validateAnswer(a.questionId, a.answer);
         if (!v.ok) return jsonRpcError(id, -32900, v.error);
@@ -456,7 +460,7 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
           if ("error" in r) {
             return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `answer_child failed: ${r.error}` }], isError: true } };
           }
-          return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `[parent-answer] đã tới con` }], isError: false } };
+          return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `[parent-answer] delivered to child` }], isError: false } };
         } catch (err) {
           return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `answer_child failed: ${err instanceof Error ? err.message : String(err)}` }], isError: true } };
         }

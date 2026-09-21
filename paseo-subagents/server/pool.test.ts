@@ -9,7 +9,7 @@ import {
 } from "./pool";
 
 describe("validatePoolArgs", () => {
-  test("chấp nhận 2-12 items, clamp concurrency 1-4, default 4", () => {
+  test("accepts 2-12 items, clamps concurrency to 1-4, and defaults to 4", () => {
     const r = validatePoolArgs(
       [
         { role: "scout", task: "a" },
@@ -29,7 +29,7 @@ describe("validatePoolArgs", () => {
     expect(c0.ok && c0.pool.concurrency).toBe(1);
   });
 
-  test("từ chối <2 items, >12 items, item thiếu role/task", () => {
+  test("rejects <2 items, >12 items, and items missing role/task", () => {
     expect(validatePoolArgs([{ role: "scout", task: "a" }], 4).ok).toBe(false);
     expect(validatePoolArgs(Array.from({ length: 13 }, () => ({ role: "scout", task: "x" })), 4).ok).toBe(false);
     expect(
@@ -44,39 +44,39 @@ describe("validatePoolArgs", () => {
     expect(validatePoolArgs("nope", 4).ok).toBe(false);
   });
 
-  test("name không-string bị drop, string giữ nguyên", () => {
+  test("drops a non-string name and preserves a string name", () => {
     const r = validatePoolArgs(
       [
         { role: "scout", task: "a", name: 5 },
-        { role: "scout", task: "b", name: "ten" },
+        { role: "scout", task: "b", name: "name" },
       ],
       2,
     );
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.pool.items[0].name).toBeUndefined();
-      expect(r.pool.items[1].name).toBe("ten");
+      expect(r.pool.items[1].name).toBe("name");
     }
   });
 });
 
 describe("scheduleBatches", () => {
-  test("chia đúng: 6 items concurrency 4 -> [4,2]", () => {
+  test("splits correctly: 6 items with concurrency 4 -> [4,2]", () => {
     const batches = scheduleBatches([1, 2, 3, 4, 5, 6], 4);
     expect(batches.map((b) => b.length)).toEqual([4, 2]);
   });
 
-  test("concurrency lớn hơn số items -> 1 batch", () => {
+  test("concurrency greater than item count -> 1 batch", () => {
     expect(scheduleBatches([1, 2], 4)).toEqual([[1, 2]]);
   });
 
-  test("clamp về 1-4", () => {
+  test("clamps to 1-4", () => {
     expect(scheduleBatches([1, 2, 3], 0).map((b) => b.length)).toEqual([1, 1, 1]);
   });
 });
 
 describe("terminal & aggregate", () => {
-  test("idle/error/archived là terminal; running/initializing/waiting không", () => {
+  test("idle/error/archived are terminal; running/initializing/waiting are not", () => {
     expect(childTerminal({ id: "a", lastStatus: "idle" })).toBe(true);
     expect(childTerminal({ id: "a", lastStatus: "error" })).toBe(true);
     expect(childTerminal({ id: "a", lastStatus: "idle", archivedAt: "x" })).toBe(true);
@@ -84,13 +84,13 @@ describe("terminal & aggregate", () => {
     expect(childTerminal({ id: "a", lastStatus: "running" })).toBe(false);
   });
 
-  test("allTerminal: true khi mọi con terminal, false khi còn 1 running, false khi rỗng", () => {
+  test("allTerminal: true when every child is terminal, false with one running or with no children", () => {
     expect(allTerminal([{ id: "a", lastStatus: "idle" }, { id: "b", lastStatus: "error" }])).toBe(true);
     expect(allTerminal([{ id: "a", lastStatus: "idle" }, { id: "b", lastStatus: "running" }])).toBe(false);
     expect(allTerminal([])).toBe(false);
   });
 
-  test("aggregatePoolReport đếm ok/lỗi và liệt kê từng con", () => {
+  test("aggregatePoolReport counts ok/failed children and lists each child", () => {
     const text = aggregatePoolReport(
       "pool-x",
       [
@@ -99,14 +99,14 @@ describe("terminal & aggregate", () => {
       ],
       (c) => ({ label: c.id === "a" ? "scout A" : "scout B", state: c.lastStatus ?? "?" }),
     );
-    expect(text).toContain("[pool-report] pool pool-x hoàn tất: 2 children terminal (ok 1, lỗi/archived 1)");
+    expect(text).toContain("[pool-report] pool pool-x complete: 2 children terminal (ok 1, failed/archived 1)");
     expect(text).toContain("- scout A: idle");
     expect(text).toContain("- scout B: error");
   });
 });
 
 describe("makePoolId", () => {
-  test("duy nhất giữa 2 lần gọi liền nhau", () => {
+  test("is unique across two consecutive calls", () => {
     expect(makePoolId()).not.toBe(makePoolId());
   });
 });

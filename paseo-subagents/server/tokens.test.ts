@@ -35,20 +35,20 @@ describe("TokenRegistry", () => {
     expect(r.size).toBeLessThanOrEqual(1024);
   });
 
-  // ---- adopt (spec v12 pa1 — durability token sau restart) ----
+  // ---- adopt (spec v12 pa1 — token durability after restart) ----
 
   function fakeMintedToken(): string {
-    // Sinh token thật cùng format 48-hex như cryptoRandomToken
+    // Generate a real token in the same 48-hex format as cryptoRandomToken.
     const bytes = new Uint8Array(24);
     crypto.getRandomValues(bytes);
     return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
   }
 
-  test("adopt: đăng ký lại token cũ, verify sống lại, bind ngay", () => {
+  test("adopt: registers an old token again, restores verification, and binds immediately", () => {
     const r = new TokenRegistry();
     const old = fakeMintedToken();
     const entry = r.adopt(old, { parentId: "main-1", title: "scout", depth: 1, canSpawn: false, role: "scout", boundAgentId: "child-9" });
-    expect(entry.token).toBe(old); // CÙNG token string — không mint mới
+    expect(entry.token).toBe(old); // SAME token string — no new token is minted.
     const c = r.verify(old);
     expect(c).not.toBeNull();
     expect(c!.parentId).toBe("main-1");
@@ -56,28 +56,28 @@ describe("TokenRegistry", () => {
     expect(c!.canSpawn).toBe(false);
   });
 
-  test("adopt: idempotent — token đã có thì trả entry hiện tại", () => {
+  test("adopt: idempotent — returns the existing entry when the token is already present", () => {
     const r = new TokenRegistry();
     const old = fakeMintedToken();
     const a1 = r.adopt(old, { parentId: "p", title: "t1" });
     const a2 = r.adopt(old, { parentId: "p", title: "t2" });
-    expect(a2).toBe(a1); // không đè entry cũ
+    expect(a2).toBe(a1); // Do not overwrite the old entry.
     expect(r.size).toBe(1);
   });
 
-  test("adopt: token sai format bị từ chối", () => {
+  test("adopt: rejects invalid token formats", () => {
     const r = new TokenRegistry();
     expect(() => r.adopt("not-a-token", { parentId: "p", title: "t" })).toThrow();
     expect(() => r.adopt("", { parentId: "p", title: "t" })).toThrow();
-    // hex đúng nhưng ngắn (24 chars) — cũng sai format
+    // Valid hex but too short (24 chars) is also invalid.
     expect(() => r.adopt("a".repeat(24), { parentId: "p", title: "t" })).toThrow();
   });
 
-  test("adopt: registry đầy thì THROW (fail-closed, không evict thầm lặng)", () => {
+  test("adopt: THROWS when the registry is full (fail-closed, no silent eviction)", () => {
     const r = new TokenRegistry();
     for (let i = 0; i < 1024; i++) r.mint("p", `gen-${i}`);
     expect(r.size).toBe(1024);
-    expect(() => r.adopt(fakeMintedToken(), { parentId: "p", title: "late" })).toThrow(/đầy/);
-    expect(r.size).toBe(1024); // không evict, không thêm
+    expect(() => r.adopt(fakeMintedToken(), { parentId: "p", title: "late" })).toThrow(/full/);
+    expect(r.size).toBe(1024); // Do not evict or add anything.
   });
 });

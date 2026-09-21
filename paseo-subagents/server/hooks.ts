@@ -31,7 +31,7 @@ export interface AgentCreateConfig {
 
 export const PARENT_ENV = "PASEO_PARENT_AGENT_ID";
 export const MODE_ENV = "PASEO_CHILD_MODE";
-/** Env L2 (spec v12): URL door grant cho main không-door (pi ext v1.4.108 đọc). */
+/** L2 environment variable (spec v12): door-grant URL for a main without a door (read by pi ext v1.4.108). */
 export const DOOR_ENV = "PASEO_SUBAGENTS_DOOR";
 
 export interface SubagentReplyRuntime {
@@ -98,18 +98,18 @@ export function rewriteChildConfig(input: AgentCreateInput, rt: SubagentReplyRun
   return { config, env };
 }
 
-/** Key MCP riêng cho main (spec 4.1): main thấy tool door BÊN CẠNH catalog daemon (G2 coexist). */
+/** Dedicated MCP key for main (spec 4.1): main sees the door tool ALONGSIDE the daemon catalog (G2 coexistence). */
 export const MAIN_MCP_KEY = "paseo-subagents";
 
-/** Inject door spawn cho MAIN-agent create (không có PASEO_PARENT_AGENT_ID).
- *  Token depth=0 canSpawn=true — main là orchestrator (spec mục 6). */
+/** Inject a spawn door when creating a MAIN agent (without PASEO_PARENT_AGENT_ID).
+ *  Token depth=0 canSpawn=true — main is the orchestrator (spec section 6). */
 export function injectMainDoor(input: AgentCreateInput, rt: SubagentReplyRuntime): AgentCreateInput {
-  if (PARENT_ENV in (input.env ?? {})) return input; // child path xử lý riêng
-  // Plugin-spawned child mang sẵn door scoped ở key 'paseo' trong config (spawnFn mint trực tiếp) —
-  // KHÔNG inject main door (E2E 2026-09-20: child bị gán thêm canSpawn door = lỗ hổng đệ quy).
+  if (PARENT_ENV in (input.env ?? {})) return input; // The child path is handled separately.
+  // A plugin-spawned child already carries a scoped door under the 'paseo' config key (spawnFn mints it directly).
+  // Do NOT inject a main door (E2E 2026-09-20: giving a child another canSpawn door creates a recursion vulnerability).
   if ((input.config.mcpServers ?? {}) ["paseo"] !== undefined) return input;
   const port = rt.getPort();
-  if (port === null) return input; // door chưa listen: main vẫn tạo bình thường (không chặn)
+  if (port === null) return input; // Door is not listening: create the main normally without blocking.
   const title = input.config.title ?? "main";
   const token = rt.registry.mint("(main)", title, { depth: 0, canSpawn: true });
   const mcpServers = {
@@ -140,10 +140,10 @@ export function registerSubagentReplyHook(server: PluginServerContext, rt: Subag
   });
 }
 
-/** Structural slice of agent.session_open before-hook request (spike 2026-09-21:
- *  buildLaunchContext agent-manager.js:3628 — request mang agentId/provider/
- *  cwd/workspaceId/reason(create|resume|refresh|import)/purpose/env; hook chỉ
- *  được đổi env, daemon lấy transformed.env cho process agent). */
+/** Structural slice of the agent.session_open before-hook request (spike 2026-09-21:
+ *  buildLaunchContext agent-manager.js:3628 — request carries agentId/provider/
+ *  cwd/workspaceId/reason(create|resume|refresh|import)/purpose/env; the hook may
+ *  change only env, and the daemon uses transformed.env for the agent process). */
 export interface SessionOpenInput {
   agentId?: string;
   provider?: string;
@@ -156,15 +156,17 @@ export interface SessionOpenInput {
 
 export interface EnvDoorOptions {
   agentsRoot: string;
-  /** Quyết định URL (đọc record CHỈ ĐỌC, mint/tái-dùng token qua ledger). */
+  /** Determine the URL (read the record without modifying it; mint/reuse the token through the ledger). */
   envDoorUrlFor: (agentId: string, title: string) => string | null;
 }
 
 /**
- * L2 env-door (spec v12 mục 11): before("agent.session_open") — main không-door
- * (sinh trước plugin) nhận env PASEO_SUBAGENTS_DOOR=<url> mỗi lần process mở
- * (create/resume/refresh/import). Pi ext v1.4.108 đọc env này TRƯỚC record →
- * sau 1 lần Refresh, main có door proxy native. KHÔNG đụng env child.
+ * L2 env door (spec v12 section 11): before("agent.session_open") — a main
+ * without a door (created before the plugin) receives
+ * PASEO_SUBAGENTS_DOOR=<url> whenever its process opens
+ * (create/resume/refresh/import). Pi ext v1.4.108 reads this environment variable
+ * BEFORE the record, so one Refresh gives the main a native proxy door. Do NOT
+ * modify child environments.
  */
 export function registerEnvDoorHook(server: PluginServerContext, rt: SubagentReplyRuntime, opts: EnvDoorOptions): () => void {
   try {
@@ -172,18 +174,18 @@ export function registerEnvDoorHook(server: PluginServerContext, rt: SubagentRep
       const request = input.request as unknown as SessionOpenInput;
       const agentId = request.agentId;
       if (!agentId || request.env?.[PARENT_ENV]) {
-        return undefined; // child (env cha) hoặc thiếu id: không đụng
+        return undefined; // Child (parent env present) or missing ID: leave unchanged.
       }
-      // Đã có door env từ caller (reloadAgentSession overrides) — không đè.
+      // Caller already supplied the door env (reloadAgentSession override) — do not overwrite it.
       if (request.env?.[DOOR_ENV]) return undefined;
       const url = opts.envDoorUrlFor(agentId, request.title ?? "main");
-      if (!url) return undefined; // không thuộc diện / door chưa listen
+      if (!url) return undefined; // Ineligible or door not listening.
       const env = { ...(request.env ?? {}), [DOOR_ENV]: url };
-      rt.log(`[paseo-subagents] env-door: agent ${agentId} reason=${request.reason ?? "?"} — ${DOOR_ENV} đã gán (L2)`);
+      rt.log(`[paseo-subagents] env-door: agent ${agentId} reason=${request.reason ?? "?"} — ${DOOR_ENV} assigned (L2)`);
       return { ...request, env } as unknown as typeof input.request;
     });
   } catch (err) {
-    rt.log(`[paseo-subagents] session_open hook không đăng ký được: ${err instanceof Error ? err.message : String(err)} — bỏ qua`);
+    rt.log(`[paseo-subagents] could not register session_open hook: ${err instanceof Error ? err.message : String(err)} — skipping`);
     return () => {};
   }
 }
