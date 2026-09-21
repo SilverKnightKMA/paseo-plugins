@@ -40,6 +40,7 @@ import {
   DEFAULT_REMIND_MINUTES,
 } from "./server/idle-archive.js";
 import { doorGrantMessage, envDoorUrlForMain, GrantLedger, mintDoorForMain, readMainDoorState, shouldGrant } from "./server/grant.js";
+import { adoptFromRecord } from "./server/adopt.js";
 
 /** Max depth tuyệt đối (spec mục 6): main=0 → con=1 → cháu=2. */
 const MAX_DEPTH = 2;
@@ -320,6 +321,9 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   let replyServer: ReplyServerHandle | null = null;
   listenReplyServer({
     registry,
+    // spec v12 pa1 (#158 / plan 8/20): verify-miss → dò record đĩa chứa đúng
+    // token, đăng ký lại vào RAM. Hatch PASEO_SUBAGENTS_ADOPT=0 tắt (401 như v1.0.69).
+    adopt: (token) => adoptFromRecord(agentsRoot, token, registry) !== null,
     deliver: (parentId, title, prompt) => {
       const api = paseoApi;
       if (!api) return Promise.reject(new Error("paseo API not captured yet — daemon lifecycle context missing"));
