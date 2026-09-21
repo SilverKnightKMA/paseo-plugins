@@ -28,7 +28,16 @@ import { createServer, type Server, type Socket } from "node:net";
 import { mkdirSync, rmSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { PaseoApi } from "@getpaseo/client";
+
+/** Structural slice of PaseoApi this module needs — a LOCAL type so plugin
+ *  builds never depend on @getpaseo/client resolution (install esbuild
+ *  boundary: type-imports still go through the resolver). */
+export interface DoorbellPaseoApi {
+	agents: {
+		list: () => Promise<unknown>;
+		ref: (id: string) => { timeline: { append: (item: DoorbellItem) => Promise<unknown> } };
+	};
+}
 
 export interface DoorbellPokeLine {
 	v: number;
@@ -67,7 +76,7 @@ const SESSION_CACHE_TTL_MS = 30_000;
 
 export function createDoorbellServer(pluginId: string, owns: readonly string[], deps: DoorbellDeps = {}) {
 	const log = deps.log ?? (() => {});
-	let api: PaseoApi | null = null;
+	let api: DoorbellPaseoApi | null = null;
 	let server: Server | null = null;
 	let sockPath = "";
 	/** sessionId → { agentId, at } cache (agents.list() is not free). */
@@ -98,7 +107,7 @@ export function createDoorbellServer(pluginId: string, owns: readonly string[], 
 	}
 
 	/** Capture the daemon client — called from RPC handlers and lifecycle hooks. */
-	function setPaseo(next: PaseoApi | null): void {
+	function setPaseo(next: DoorbellPaseoApi | null): void {
 		if (next) api = next;
 	}
 
@@ -212,7 +221,7 @@ export type DoorbellServer = ReturnType<typeof createDoorbellServer>;
  * the whole plugin load. Wrap every lifecycle registration and never throw.
  */
 export function safeOnDoorbellCapture(
-	server: { on: (name: never, handler: (event: unknown, context: { paseo: PaseoApi }) => void) => () => void },
+	server: { on: (name: never, handler: (event: unknown, context: { paseo: DoorbellPaseoApi }) => void) => () => void },
 	bell: DoorbellServer,
 	events: readonly string[] = ["agent.turn_started", "agent.turn_ended", "agent.created"],
 	log: (msg: string) => void = () => {},
