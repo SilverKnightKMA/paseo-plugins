@@ -1,19 +1,21 @@
 /**
- * Idle-archive reminder — plugin port of #129 (pi ext idle-archive.ts),
- * task #141 / plan step 7.
+ * Idle-archive — plugin port of #129 (pi ext idle-archive.ts), task #141 / plan step 7.
  *
- * Problem: completed subagents pile up in the agent list; the daemon's autoArchive
- * is archive-on-terminal, which is too aggressive (it prevents resume-by-name
- * follow-ups). Design: REMIND, do not auto-archive. Remind the parent when ALL of
- * its children are quiet (not running/initializing/waiting and no attention marker)
- * and the NEWEST child has been idle for at least remindMinutes (default 15).
+ * #224 (2026-09-22): the REMIND design is RETIRED. Evidence: e2e-m130-codex2
+ * (codex parent) received the [housekeeping] reminder 10x over 7h and every time
+ * answered "Unable to archive ... CLI path unresponsive" — codex/claude parents
+ * have NO paseo CLI, so they can never comply: an infinite nag loop that burns
+ * foreign-provider tokens while children stay unarchived. Archiving is plumbing,
+ * and plumbing belongs to the system, not the model.
  *
- * Unlike the pi ext version, the driver runs in the plugin process (daemon-side)
- * and reads record files directly from disk (~/.paseo/agents/<ws>/<id>.json)
- * instead of using `paseo agent list`. Records contain labels/lastStatus/
- * lastActivityAt/attentionTimestamp/archivedAt. Track only this plugin's children
- * (`subagent.parent` label) to avoid duplicate reminders with pi ext, which reminds
- * its own children.
+ * New design: the plugin archives idle children DIRECTLY through its in-process
+ * paseo API (agents.ref(id).archive()) — no model, no harness, no CLI. Soft-delete
+ * semantics are preserved end to end (daemon unarchives automatically when a
+ * message arrives), so resume-by-name follow-ups keep working. The decision is
+ * per-child and conservative: terminal status (idle/error/closed), no active
+ * attention marker, known last activity, quiet for at least N minutes (default 15,
+ * 0 = disabled). Only this plugin's children (subagent.spawner label) are ever
+ * touched — pi-ext children stay with their own owner.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -47,13 +49,15 @@ export interface ArchiveReminder {
   command: string;
 }
 
-/** Fewer idle children than this is not enough clutter to warrant a reminder. */
-export const MIN_IDLE_CHILDREN = 3;
-
-/** After one reminder, stay quiet for this interval (re-arm per parent). */
-export const ARCHIVE_REMIND_REARM_MS = 60 * 60_000;
-
 export const DEFAULT_REMIND_MINUTES = 15;
+
+/** A child the plugin may archive itself (soft delete). */
+export interface ArchivableChild {
+  id: string;
+  title: string | undefined;
+  parentId: string;
+  idleMinutes: number;
+}
 
 function parseMs(v: unknown): number | null {
   if (typeof v !== "string" || v.length === 0) return null;
@@ -92,54 +96,35 @@ export function readAgentRecords(agentsRoot: string): AgentRecordLite[] {
 }
 
 /**
- * Select the parent's children (`subagent.parent` label), excluding archived ones.
- * spawner: accept only children created by this spawner (default 'paseo-subagents').
- * Pi ext children also have subagent.parent; without this filter, reminders would
- * be duplicated.
+ * Pure selection (#224): every plugin-spawned child that is terminal, quiet,
+ * unarchived and past the grace window — across ALL parents, decided per child.
+ * Fail closed for any unknown value: running/waiting/initializing status, an
+ * active non-terminal attention marker, an unknown last-activity age, an
+ * already-archived record, or a child spawned by another owner all disqualify.
  */
-export function toIdleChildren(
+export function selectAutoArchivable(
   records: AgentRecordLite[],
-  parentId: string,
-  spawner: string = "paseo-subagents",
-): IdleChild[] {
-  return records
-    .filter((r) => r.labels?.["subagent.parent"] === parentId && !r.archivedAt && r.labels?.["subagent.spawner"] === spawner)
-    .map((r) => ({
-      id: r.id,
-      status: r.lastStatus ?? null,
-      lastActivityMs: parseMs(r.lastActivityAt),
-      // The daemon sets requiresAttention='finished' on EVERY completed one-shot
-      // child. That is the state to archive, not a blocker. Only a marker waiting
-      // for the parent (unknown/non-terminal reason) blocks the reminder.
-      attentionMs: r.attentionReason && TERMINAL_ATTENTION_REASONS.has(r.attentionReason)
-        ? null
-        : parseMs(r.attentionTimestamp),
-    }));
-}
-
-/** Pure decision. null = no reminder (fail closed for any unknown value). */
-export function shouldRemindIdleArchive(
-  children: IdleChild[],
   nowMs: number,
   minutes: number,
-  minChildren: number = MIN_IDLE_CHILDREN,
-): ArchiveReminder | null {
-  if (minutes <= 0) return null;
-  if (children.length < minChildren) return null;
-  for (const c of children) {
-    if (c.status === "running" || c.status === "initializing") return null; // Busy.
-    if (c.status === "waiting") return null; // Parked on a question/decision.
-    if (c.attentionMs !== null) return null; // Active attention marker.
-    if (c.lastActivityMs === null) return null; // Unknown age — do not guess.
+  spawner: string = "paseo-subagents",
+): ArchivableChild[] {
+  if (minutes <= 0) return [];
+  const out: ArchivableChild[] = [];
+  for (const r of records) {
+    if (r.archivedAt) continue;
+    if (r.labels?.["subagent.spawner"] !== spawner) continue;
+    const parentId = r.labels?.["subagent.parent"];
+    if (!parentId) continue;
+    if (r.lastStatus !== "idle" && r.lastStatus !== "error" && r.lastStatus !== "closed") continue;
+    // A terminal attention marker (finished/error) is the daemon's normal settled
+    // stamp on one-shot children — archiveable. Any OTHER active marker means the
+    // child is waiting on its parent: leave it.
+    if (r.attentionTimestamp && !(r.attentionReason && TERMINAL_ATTENTION_REASONS.has(r.attentionReason))) continue;
+    const lastMs = parseMs(r.lastActivityAt);
+    if (lastMs === null) continue; // Unknown age — do not guess.
+    const idleMs = nowMs - lastMs;
+    if (idleMs < minutes * 60_000) continue;
+    out.push({ id: r.id, title: r.title, parentId, idleMinutes: Math.floor(idleMs / 60_000) });
   }
-  const newest = Math.max(...children.map((c) => c.lastActivityMs as number));
-  if (nowMs - newest < minutes * 60_000) return null; // The newest child is still in the grace window.
-  const ids = children.map((c) => c.id);
-  return { ids, command: `paseo agent archive ${ids.join(" ")}` };
-}
-
-/** Remind once per re-arm window: return true if a reminder is allowed now. */
-export function reminderArmed(lastRemindMs: number | undefined, nowMs: number): boolean {
-  if (lastRemindMs === undefined) return true;
-  return nowMs - lastRemindMs >= ARCHIVE_REMIND_REARM_MS;
+  return out;
 }

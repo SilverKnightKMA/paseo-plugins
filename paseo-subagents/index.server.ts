@@ -34,9 +34,7 @@ import {
 } from "./server/pool";
 import {
   readAgentRecords,
-  toIdleChildren,
-  shouldRemindIdleArchive,
-  reminderArmed,
+  selectAutoArchivable,
   DEFAULT_REMIND_MINUTES,
 } from "./server/idle-archive.js";
 import { isTerminal, lastAssistantText, autoReportEnvelope, type WatchedChild } from "./server/auto-report.js";
@@ -55,6 +53,8 @@ interface PaseoSendSlice {
       send(text: string): Promise<void>;
       /** #225 auto-report: read a child's timeline (assistant_message) provider-agnostically. */
       timeline?: { refetch(): Promise<{ entries?: { item?: unknown }[] }> };
+      /** #224 auto-archive: soft delete (daemon unarchives on incoming message). */
+      archive(): Promise<{ archivedAt: string }>;
     };
     create(options: {
       config: {
@@ -110,44 +110,35 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     }
   })();
 
-  // ── Idle-archive reminder (#141 / plan step 7) ─────────────────────────
-  // Daemon-side port of #129: scan disk records every 60s and remind the parent
-  // through the proper delivery channel when every child (subagent.parent label)
-  // has been idle for at least N minutes. REMIND, do not auto-archive. 0 = disabled.
-  // Track only this plugin's children to avoid duplicate reminders with pi ext,
-  // which reminds its own children in the pi process.
-  const remindMinutes = (() => {
-    const raw = Number(process.env.PASEO_SUBAGENTS_ARCHIVE_REMIND_MINUTES);
+  // ── Idle-archive auto-archive (#224, retired the #141 REMIND design) ──────
+  // Evidence 2026-09-22: codex/claude parents have no paseo CLI — the [housekeeping]
+  // reminder fired 10x at e2e-m130-codex2 and could never be complied with
+  // (nag loop + 11 children stuck unarchived). The plugin now archives idle
+  // children ITSELF through the in-process paseo API: per-child decision, terminal
+  // + quiet >= N minutes + no active attention marker; soft delete (a message
+  // auto-unarchives, resume-by-name survives). 0 = disabled. Track only this
+  // plugin's children — pi ext children stay with their own owner.
+  const archiveAfterMinutes = (() => {
+    const raw = Number(process.env.PASEO_SUBAGENTS_ARCHIVE_AFTER_MINUTES ?? process.env.PASEO_SUBAGENTS_ARCHIVE_REMIND_MINUTES);
     return Number.isFinite(raw) && raw >= 0 ? Math.min(Math.round(raw), 1440) : DEFAULT_REMIND_MINUTES;
   })();
-  const lastRemindByParent = new Map<string, number>();
   const agentsRoot = join(homedir(), ".paseo", "agents");
 
   const scanIdleArchive = async (): Promise<void> => {
     const api = paseoApi;
     if (!api) return; // No lifecycle context yet — wait for the next scan.
+    if (archiveAfterMinutes <= 0) return;
     try {
-      const records = readAgentRecords(agentsRoot);
-      const byId = new Map(records.map((r) => [r.id, r]));
-      const parents = new Set<string>();
-      for (const r of records) {
-        if (r.labels?.["subagent.spawner"] !== "paseo-subagents") continue;
-        const p = r.labels?.["subagent.parent"];
-        // Do not remind archived parents (send would auto-unarchive and wake them).
-        if (p && p !== "(main)" && !byId.get(p)?.archivedAt) parents.add(p);
-      }
-      for (const parent of parents) {
-        const children = toIdleChildren(records, parent);
-        const r = shouldRemindIdleArchive(children, Date.now(), remindMinutes);
-        if (!r) continue;
-        if (!reminderArmed(lastRemindByParent.get(parent), Date.now())) continue;
-        lastRemindByParent.set(parent, Date.now());
-        console.log(
-          `[paseo-subagents] idle-archive reminder: ${children.length} children of ${parent} idle for ≥${remindMinutes}m`,
-        );
-        await api.agents.ref(parent).send(
-          `[housekeeping] ${children.length} subagents have been idle for ≥${remindMinutes} minutes, and none are running or parked. Archive them to keep the list tidy (soft delete — sending a message to a child automatically unarchives it):\n${r.command}`,
-        );
+      const targets = selectAutoArchivable(readAgentRecords(agentsRoot), Date.now(), archiveAfterMinutes);
+      for (const t of targets) {
+        try {
+          await api.agents.ref(t.id).archive();
+          console.log(
+            `[paseo-subagents] auto-archive: '${t.title ?? "untitled"}' (${t.id.slice(0, 8)}, idle ${t.idleMinutes}m, parent ${t.parentId.slice(0, 8)}) — soft delete, a message auto-unarchives`,
+          );
+        } catch (err) {
+          console.log(`[paseo-subagents] auto-archive failed (${t.id.slice(0, 8)}): ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
     } catch (err) {
       console.log(`[paseo-subagents] idle-archive scan failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -155,14 +146,14 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   };
 
   const idleTimer =
-    remindMinutes > 0
+    archiveAfterMinutes > 0
       ? setInterval(() => {
           void scanIdleArchive();
         }, 60_000)
       : null;
   if (idleTimer) idleTimer.unref?.();
   console.log(
-    `[paseo-subagents] idle-archive scanner ${remindMinutes > 0 ? `armed (${remindMinutes}m, scans every 60s)` : "disabled (0)"}`,
+    `[paseo-subagents] idle-archive ${archiveAfterMinutes > 0 ? `auto-archive after ${archiveAfterMinutes}m (scans every 60s, soft delete)` : "disabled (0)"}`,
   );
 
   // #225 auto-report backstop state: children spawned by THIS process are
