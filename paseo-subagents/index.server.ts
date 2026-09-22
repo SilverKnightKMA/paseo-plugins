@@ -452,6 +452,15 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   };
   const offTurnEnded = safeOn("agent.turn_ended", onTurnEnded);
 
+  // F10 (#219): after a mid-session reload no event has delivered a paseo api
+  // yet, and a turn that STARTED before re-registration can end without
+  // turn_ened being delivered to the new handler. turn_started fires one cycle
+  // earlier — capture the api there so the next turn_ended is guaranteed to
+  // reach the mint path instead of silently bailing on a null api.
+  const offTurnStarted = safeOn("agent.turn_started", (_event: unknown, context: { paseo?: unknown }) => {
+    if (context?.paseo) capturePaseo(context.paseo as PaseoSendSlice, "turn_started");
+  });
+
   const offHook = registerSubagentReplyHook(server, {
     registry,
     // Port is bound on the next event-loop turn after contribute returns;
@@ -481,6 +490,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     offCreated();
     if (idleTimer) clearInterval(idleTimer);
     offTurnEnded();
+    offTurnStarted();
     clearInterval(poolTimer);
     replyServer?.close();
   };

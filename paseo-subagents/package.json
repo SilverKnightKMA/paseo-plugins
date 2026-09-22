@@ -1,7 +1,7 @@
 {
   "name": "paseo-subagents",
   "private": true,
-  "version": "1.0.87",
+  "version": "1.0.88",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
