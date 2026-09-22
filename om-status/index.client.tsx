@@ -56,25 +56,19 @@ export default function contribute(client: PluginClientContext) {
       };
     },
   });
-  // #39 doorbell wake signal: engine pokes the plugin server, which appends
-  // kind "doorbell" timeline items (no renderer = invisible). This defensive
-  // transformer removes them from display for EVERY plugin — foreign kinds
-  // pass through untouched.
-  client.addTimelineTransformer({
-    id: "doorbell-hide",
-    query: { itemType: "plugin" },
-    transform: ({ item }) => {
-      if (item.kind === "doorbell") return { items: [] };
-      return undefined;
-    },
-  });
-
   // Doorbell wake-signal items (server/doorbell-server.ts, kind "doorbell" v1)
   // are renderer-less BY DESIGN — invisible wake pings, not content. App 0.8.0
   // shows "Plugin timeline item unavailable." for plugin items whose owning
-  // plugin registers no renderer — the doorbell-hide transformer above covers
-  // the live/projected path; this null renderer covers the canonical/history
-  // path where transformers do not run (2026-09-22 UI audit).
+  // plugin registers no renderer. The null renderer below is THE fix —
+  // PluginTimelineItemView resolves renderers for plugin items by kind+version
+  // on every projection path.
+  //
+  // v1.0.84 (F9 final): the doorbell-hide TRANSFORMER that lived here was
+  // removed — the app's addTimelineTransformer validator only accepts
+  // itemType in {user_message, assistant_message, reasoning, tool_call, todo,
+  // error, compaction}; "plugin" throws "Timeline transformer doorbell-hide
+  // has invalid item type" and that throw aborts the WHOLE contribute(), so
+  // om-status registered NOTHING since v1.0.76 (root cause of F9).
   client.addTimelineRenderer({
     kind: "doorbell",
     version: 1,

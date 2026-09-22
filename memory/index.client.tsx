@@ -39,4 +39,10 @@ export default function contribute(client: PluginClientContext) {
 			context_.openPanel("memory");
 		},
 	});
+
+	// App runtime contract: contribute() MUST return a cleanup function
+	// (runPluginClientBundle throws "Plugin memory contribution must return a
+	// cleanup function" otherwise — memory items rendered unavailable since
+	// v1.0.0; found via the app's plugin evaluation errors, F9 2026-09-22).
+	return () => {};
 }
