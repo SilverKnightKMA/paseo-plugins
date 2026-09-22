@@ -4,7 +4,7 @@
     "scout": {
       "provider": "pi",
       "config": "scout",
-      "model": "fci/deepseek-v4-flash",
+      "model": "zaicp/glm-5.3-flash",
       "thinking": "low"
     },
     "researcher": {
