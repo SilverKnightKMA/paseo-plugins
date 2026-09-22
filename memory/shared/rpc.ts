@@ -1,5 +1,21 @@
 import { z } from "zod";
-import { defineRpc } from "@getpaseo/plugin";
+
+const RPC_NAME = /^[a-z][a-z0-9._-]*$/;
+
+/**
+ * Local copy of @getpaseo/plugin's defineRpc. Importing the server package
+ * here drags require("@getpaseo/plugin") into the CLIENT bundle (panel imports
+ * this file for schemas) and the app runtime rejects it: 'Module
+ * "@getpaseo/plugin" is not available in plugin client code' — every memory
+ * plugin timeline item rendered "Plugin timeline item unavailable" since
+ * v1.0.0 (F9 2026-09-22, found by evaluating the daemon-served bundle in a
+ * harness mirroring the app's module resolver).
+ */
+function defineRpc<T extends { name: string }>(definition: T) {
+	const name = definition.name.trim();
+	if (!RPC_NAME.test(name)) throw new Error(`Invalid plugin RPC method: ${definition.name}`);
+	return { ...definition, name };
+}
 
 /**
  * Memory panel contract (#181, P4 of the memory part 2 plan 2026-09-21).
