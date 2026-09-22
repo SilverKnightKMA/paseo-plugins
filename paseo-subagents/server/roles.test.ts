@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { composeInitialPrompt, loadRoleTemplates, parseRoleMd, resolveRole, doorToolPolicy, DEFAULT_ROLE_OVERRIDES, PROVIDER_CATALOGS } from "./roles";
+import { BUILTIN_ROLE_MD } from "./role-md.generated.js";
 import { composeInitialPrompt, loadRoleTemplates, parseRoleMd, resolveRole, DEFAULT_ROLE_OVERRIDES, PROVIDER_CATALOGS } from "./roles";
 
 describe("parseRoleMd", () => {
@@ -114,5 +115,47 @@ describe("modeMap config -> modeId", () => {
 	test("an unknown config in the new Codex catalog -> fail-closed", () => {
 		const r = resolveRole("worker", { roles: { worker: { provider: "codex", config: "read-only", model: "m" } } });
 		expect(r.ok).toBe(false);
+	});
+});
+
+describe("#225 doorToolPolicy (provider-true reply channel)", () => {
+	test("pi gets NO toolPolicy — the daemon rejects it for pi outright", () => {
+		expect(doorToolPolicy("pi", "paseo")).toBeUndefined();
+	});
+
+	test("claude/codex pre-approve exactly the two door tools on the child's MCP server key", () => {
+		for (const provider of ["claude", "codex"] as const) {
+			const policy = doorToolPolicy(provider, "paseo");
+			expect(policy?.preapproved).toEqual([
+				{ kind: "mcp", server: "paseo", tool: "reply_to_parent" },
+				{ kind: "mcp", server: "paseo", tool: "ask_parent" },
+			]);
+		}
+	});
+});
+
+describe("#225 role templates tell the provider truth", () => {
+	test("every builtin template says reply_to_parent and none says message_main", () => {
+		for (const [name, md] of Object.entries(BUILTIN_ROLE_MD)) {
+			expect(md).toContain("reply_to_parent");
+			expect(md).not.toContain("message_main");
+		}
+	});
+
+	test("every builtin template carries the end-with-text fallback", () => {
+		for (const [name, md] of Object.entries(BUILTIN_ROLE_MD)) {
+			expect(md).toContain("the system captures it");
+		}
+	});
+});
+
+describe("#226 resolved role carries the short provider", () => {
+	test("resolveRole exposes provider for the toolPolicy decision", () => {
+		const r = resolveRole("codex-worker", {});
+		expect(r.ok).toBe(true);
+		if (r.ok) expect(r.role.provider).toBe("codex");
+		const s = resolveRole("scout", {});
+		expect(s.ok).toBe(true);
+		if (s.ok) expect(s.role.provider).toBe("pi");
 	});
 });

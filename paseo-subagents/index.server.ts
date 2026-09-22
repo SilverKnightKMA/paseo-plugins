@@ -24,7 +24,7 @@ import { TokenRegistry } from "./server/tokens.js";
 import { listenReplyServer, type ReplyServerHandle, type SpawnFn, type SpawnPoolFn, type CallerCaps, type SpawnArgs, type AskFn, type AnswerFn } from "./server/mcp-server.js";
 import { registerSubagentReplyHook, registerEnvDoorHook, PARENT_ENV, MAIN_MCP_KEY } from "./server/hooks.js";
 import { canAnswer, makeQuestionId, type PendingQuestion } from "./server/ask.js";
-import { composeInitialPrompt, resolveRole, type PluginSettings } from "./server/roles.js";
+import { composeInitialPrompt, resolveRole, doorToolPolicy, type PluginSettings } from "./server/roles.js";
 import {
   aggregatePoolReport,
   allTerminal,
@@ -39,6 +39,7 @@ import {
   reminderArmed,
   DEFAULT_REMIND_MINUTES,
 } from "./server/idle-archive.js";
+import { isTerminal, lastAssistantText, autoReportEnvelope, type WatchedChild } from "./server/auto-report.js";
 import { doorGrantMessage, doorUrlForMain, envDoorUrlForMain, GrantLedger, readMainDoorState, shouldGrant } from "./server/grant.js";
 import { GrantStore, pluginDataDir, writeDoorState } from "./server/door-state.js";
 import { adoptFromRecord } from "./server/adopt.js";
@@ -50,9 +51,20 @@ const MAX_DEPTH = 2;
  *  @getpaseo/client, which is not a plugin-SDK specifier). */
 interface PaseoSendSlice {
   agents: {
-    ref(id: string): { send(text: string): Promise<void> };
+    ref(id: string): {
+      send(text: string): Promise<void>;
+      /** #225 auto-report: read a child's timeline (assistant_message) provider-agnostically. */
+      timeline?: { refetch(): Promise<{ entries?: { item?: unknown }[] }> };
+    };
     create(options: {
-      config: { provider: string; title?: string; mcpServers?: Record<string, unknown>; modeId?: string };
+      config: {
+        provider: string;
+        title?: string;
+        mcpServers?: Record<string, unknown>;
+        modeId?: string;
+        /** #225: door tool pre-approval (claude allowedTools / codex enabled_tools). */
+        toolPolicy?: { preapproved: { kind: "mcp"; server: string; tool: string }[] };
+      };
       parent?: string | { id: string };
       labels?: Record<string, string>;
       prompt?: string;
@@ -153,6 +165,12 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     `[paseo-subagents] idle-archive scanner ${remindMinutes > 0 ? `armed (${remindMinutes}m, scans every 60s)` : "disabled (0)"}`,
   );
 
+  // #225 auto-report backstop state: children spawned by THIS process are
+  // watched until terminal; children that DID deliver via reply_to_parent are
+  // marked at deliver time (meta.callerAgentId) and never pinged.
+  const watched = new Map<string, WatchedChild>();
+  const reported = new Set<string>();
+
   const spawnChild = async (
     caller: CallerCaps,
     args: SpawnArgs,
@@ -178,7 +196,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     }
     const port = replyServer?.port ?? null;
     if (port === null) return { error: "reply door is not listening — retry shortly" };
-    const token = registry.mint(parentId, title, { depth: caller.depth + 1, canSpawn: false, role: args.role });
+    const token = registry.mint(parentId, title, { depth: caller.depth + 1, canSpawn: false, role: args.role, providerModel: role.providerEntry });
     const childDoorUrl = `http://127.0.0.1:${port}/mcp?caller=${token}`;
 
     const labels: Record<string, string> = {
@@ -206,6 +224,11 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
           mcpServers: {
             paseo: { type: "http" as const, url: childDoorUrl, alwaysLoad: true },
           },
+          // #225: un-gate the door tools for providers that permission-gate MCP
+          // calls (claude acceptEdits hung 71 minutes on the approval). Pi's reply
+          // door is a native ungated extension tool — and the daemon rejects
+          // toolPolicy for pi outright — so it gets none.
+          ...doorToolPolicy(role.provider, "paseo"),
         },
         cwd: process.cwd(), // TODO(E2E): use the caller agent's cwd when the slice is extended.
         prompt: initialPrompt,
@@ -213,6 +236,17 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
         parent: parentId,
       });
       console.log(`[paseo-subagents] spawn_subagent: role=${args.role} -> agent ${child.id} (parent ${parentId}, depth ${caller.depth + 1}, door scoped 1 tool)`);
+      // #225 auto-report backstop: watch every plugin-spawned child; if it goes
+      // terminal without calling reply_to_parent, its last assistant text is
+      // captured from the timeline and delivered as [child-report].
+      watched.set(child.id, {
+        agentId: child.id,
+        parentId,
+        title,
+        role: args.role,
+        providerModel: role.providerEntry,
+        spawnedAt: Date.now(),
+      });
       return { agentId: child.id };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
@@ -287,8 +321,55 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       }
     }
   };
+  // #225 auto-report backstop scan: runs on the same 30s cadence as the pool
+  // watcher. For every watched child whose disk record is terminal AND that has
+  // not delivered via the door: mark reported FIRST (dedupe before any await —
+  // a reply arriving mid-scan must not double-send), then capture the child's
+  // last assistant text from its timeline and deliver the [child-report].
+  const scanAutoReport = async (): Promise<void> => {
+    const api = paseoApi;
+    if (!api || watched.size === 0) return;
+    let records: ReturnType<typeof readAgentRecords>;
+    try {
+      records = readAgentRecords(agentsRoot);
+    } catch {
+      return; // Temporary disk error — retry on the next scan.
+    }
+    const byId = new Map(records.map((r) => [r.id, r]));
+    for (const [childId, child] of [...watched]) {
+      if (reported.has(childId)) {
+        watched.delete(childId);
+        continue;
+      }
+      const record = byId.get(childId);
+      if (!record) {
+        watched.delete(childId); // Record deleted — stop waiting.
+        continue;
+      }
+      if (!isTerminal(record)) continue;
+      watched.delete(childId);
+      reported.add(childId);
+      let finalText: string | null = null;
+      try {
+        const ref = api.agents.ref(childId);
+        if (ref.timeline?.refetch) {
+          const payload = await ref.timeline.refetch();
+          finalText = lastAssistantText((payload?.entries ?? []).map((e) => e.item));
+        }
+      } catch (err) {
+        console.log(`[paseo-subagents] auto-report timeline fetch failed (${childId.slice(0, 8)}): ${err instanceof Error ? err.message : String(err)}`);
+      }
+      try {
+        console.log(`[paseo-subagents] auto-report: child ${childId.slice(0, 8)} terminal without reply_to_parent -> parent ${child.parentId.slice(0, 8)}`);
+        await api.agents.ref(child.parentId).send(autoReportEnvelope(child, finalText));
+      } catch (err) {
+        console.log(`[paseo-subagents] auto-report deliver failed (${childId.slice(0, 8)}): ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  };
   const poolTimer = setInterval(() => {
     void scanPools();
+    void scanAutoReport();
   }, 30_000);
   poolTimer.unref?.();
 
@@ -335,9 +416,15 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     // containing the exact token and register it in RAM again. The
     // PASEO_SUBAGENTS_ADOPT=0 hatch disables this path (401 as in v1.0.69).
     adopt: (token) => adoptFromRecord(agentsRoot, token, registry) !== null,
-    deliver: (parentId, title, prompt) => {
+    deliver: (parentId, title, prompt, meta) => {
       const api = paseoApi;
       if (!api) return Promise.reject(new Error("paseo API not captured yet — daemon lifecycle context missing"));
+      // #225: a successful (in-flight) tool delivery counts as reported — the
+      // auto-report backstop must not double-ping children that used the door.
+      if (meta?.callerAgentId) {
+        reported.add(meta.callerAgentId);
+        watched.delete(meta.callerAgentId);
+      }
       console.log(`[paseo-subagents] deliver [child-report] '${title}' -> parent ${parentId}`);
       return api.agents.ref(parentId).send(`[child-report] ${title}: ${prompt}`);
     },

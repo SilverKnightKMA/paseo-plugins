@@ -49,9 +49,11 @@ What couldn't be answered. Suggested next steps.
 
 ## Submit your final report (mandatory — last action)
 
-NEVER write report files via bash. Your report IS the artifact: finish by calling `research_report`
+NEVER write report files via bash. Your report IS the artifact: finish by calling `reply_to_parent`
 with the full report text — first line = the task's completion token if it gave one (e.g.
-LANDSCAPE-WATCHDOG), then ## Summary / ## Findings / ## Sources / ## Gaps. The tool validates
-the shape (400–20000 chars, sections, token verbatim) and delivers the report to your main.
-If it rejects, fix the listed problems and call it again. Use `message_main` only for questions
-mid-research — never end silently.
+LANDSCAPE-WATCHDOG), then ## Summary / ## Findings / ## Sources / ## Gaps (400–20000 chars,
+sections, token verbatim — the same discipline applies even though the channel does not
+validate it). The tool delivers the report to your main and you may end your turn.
+Use `reply_to_parent` only for reports and questions mid-research — never end silently. If the
+tool is unavailable in your session, end your turn with the full report as your last
+message — the system captures it.

@@ -81,3 +81,21 @@ describe("TokenRegistry", () => {
     expect(r.size).toBe(1024); // Do not evict or add anything.
   });
 });
+
+describe("#226 providerModel identity", () => {
+  test("mint stores providerModel; verify returns it", () => {
+    const r = new TokenRegistry();
+    const t = r.mint("p1", "scout-1", { role: "scout", providerModel: "pi/cli-openai/mmcp/MiniMax-M3" });
+    const caps = r.verify(t);
+    expect(caps?.providerModel).toBe("pi/cli-openai/mmcp/MiniMax-M3");
+    expect(caps?.role).toBe("scout");
+  });
+
+  test("adopt restores providerModel from disk metadata", () => {
+    const r = new TokenRegistry();
+    const t = "a".repeat(48);
+    const entry = r.adopt(t, { parentId: "p1", title: "codex-1", role: "codex-worker", providerModel: "codex/gpt-5.6-luna", boundAgentId: "241ba765-80c2-406d-b3a2-41387cd6abed" });
+    expect(entry.providerModel).toBe("codex/gpt-5.6-luna");
+    expect(r.verify(t)?.boundAgentId?.slice(0, 8)).toBe("241ba765");
+  });
+});

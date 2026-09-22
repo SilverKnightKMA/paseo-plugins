@@ -39,6 +39,7 @@ Which file to look at first and why.
 
 ## Report back when done (mandatory)
 
-ALWAYS finish by calling the `message_main` tool with a 2-4 line digest: main conclusion +
+ALWAYS finish by calling the `reply_to_parent` tool with a 2-4 line digest: main conclusion +
 the completion token if the task specified one (put it on the first line). Never end
-silently — your main stays asleep until you call it or the auto-report backstop pings it.
+silently — your main stays asleep until you call it. If the tool is unavailable in your
+session, end your turn with the digest as your last message — the system captures it.

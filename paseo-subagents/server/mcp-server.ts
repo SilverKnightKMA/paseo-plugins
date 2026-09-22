@@ -103,6 +103,9 @@ export interface SpawnArgs {
 export interface CallerCaps {
   canSpawn: boolean;
   depth: number;
+  /** #226: identity for the [child-report] header (unknown for hook-minted callers). */
+  role?: string;
+  providerModel?: string;
   boundAgentId?: string;
 }
 
@@ -134,7 +137,30 @@ interface JsonRpcRequest {
   params?: unknown;
 }
 
-export type DeliverFn = (parentId: string, title: string, prompt: string) => Promise<void>;
+export type DeliverFn = (
+  parentId: string,
+  title: string,
+  prompt: string,
+  /** #225: caller identity for the auto-report backstop — set => this child DID report. */
+  meta?: { callerAgentId?: string },
+) => Promise<void>;
+
+/**
+ * #226: decorate the child's title with its identity — `[child-report] scout (scout,
+ * a15788c7, pi/cli-openai/mmcp/MiniMax-M3): …`. Parts that are unknown are simply
+ * omitted (hook-minted callers may have no role); a caller with no identity at all
+ * keeps the bare title, so the envelope stays valid in every case.
+ */
+export function reportTitle(
+  title: string,
+  caps: { role?: string; boundAgentId?: string; providerModel?: string },
+): string {
+  const parts: string[] = [];
+  if (caps.role) parts.push(caps.role);
+  if (caps.boundAgentId) parts.push(caps.boundAgentId.slice(0, 8));
+  if (caps.providerModel) parts.push(caps.providerModel);
+  return parts.length > 0 ? `${title} (${parts.join(", ")})` : title;
+}
 
 export interface ReplyServerHandle {
   port: number;
@@ -332,7 +358,11 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
         // report is not lost and the child is not blocked.
         const ackMs = ctx.opts.deliverAckMs ?? DELIVER_ACK_MS;
         const promptText: string = args.prompt;
-        const inflight = Promise.resolve().then(() => ctx.opts.deliver(ctx.parentId, ctx.title, promptText));
+        const inflight = Promise.resolve().then(() =>
+          ctx.opts.deliver(ctx.parentId, reportTitle(ctx.title, ctx.caps), promptText, {
+            callerAgentId: ctx.caps.boundAgentId,
+          }),
+        );
         inflight.catch((err: unknown) => {
           const reason = err instanceof Error ? err.message : String(err);
           console.log(`[paseo-subagents] deliver async-failed ('${ctx.title}'): ${reason}`);

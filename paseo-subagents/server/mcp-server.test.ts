@@ -3,12 +3,12 @@ import { TokenRegistry } from "./tokens.js";
 import { startReplyServer, listenReplyServer, type McpRuntime } from "./mcp-server.js";
 
 const registry = new TokenRegistry();
-const deliveries: Array<{ parentId: string; title: string; prompt: string }> = [];
+const deliveries: Array<{ parentId: string; title: string; prompt: string; meta?: { callerAgentId?: string } }> = [];
 const runtime: McpRuntime = await startReplyServer({
   registry,
-  deliver: async (parentId, title, prompt) => {
+  deliver: async (parentId, title, prompt, meta) => {
     if (prompt === "FORCE-FAIL") throw new Error("forced delivery failure");
-    deliveries.push({ parentId, title, prompt });
+    deliveries.push({ parentId, title, prompt, meta });
   },
 });
 const base = `http://127.0.0.1:${runtime.port}/mcp`;
@@ -52,7 +52,25 @@ describe("scoped reply MCP server", () => {
     const r = await rpc("tools/call", { name: "reply_to_parent", arguments: { prompt: "hello from child" } });
     expect(r.body.result.isError).toBe(false);
     expect(deliveries).toHaveLength(1);
-    expect(deliveries[0]).toEqual({ parentId: "parent-abc", title: "e2e-child", prompt: "hello from child" });
+    expect(deliveries[0]).toEqual({ parentId: "parent-abc", title: "e2e-child", prompt: "hello from child", meta: { callerAgentId: undefined } });
+  });
+
+  test("#226: deliver title carries role + agentId-8 + providerModel; meta carries callerAgentId", async () => {
+    const ident = registry.mint("parent-xyz", "f10-smoke-scout", {
+      role: "scout",
+      providerModel: "pi/cli-openai/mmcp/MiniMax-M3",
+    });
+    registry.bind(ident, "a15788c7-a137-4bed-b8fb-9a9e83320151");
+    const r = await rpc(
+      "tools/call",
+      { name: "reply_to_parent", arguments: { prompt: "F10-SCOUT-OK" } },
+      ident,
+    );
+    expect(r.body.result.isError).toBe(false);
+    const d = deliveries[deliveries.length - 1];
+    expect(d.title).toBe("f10-smoke-scout (scout, a15788c7, pi/cli-openai/mmcp/MiniMax-M3)");
+    expect(d.meta?.callerAgentId).toBe("a15788c7-a137-4bed-b8fb-9a9e83320151");
+    expect(d.prompt).toBe("F10-SCOUT-OK");
   });
 
   test("no agentId parameter exists anywhere — destination is unaddressable", async () => {

@@ -35,4 +35,5 @@ If a field is absent, defaults apply: scope = the files your objective names; es
 
 ALWAYS finish by calling the `reply_to_parent` tool with a 2-4 line digest: main conclusion + path
 to the artifact file (if any) + the completion token if the task specified one. Never end
-silently — your main stays asleep until you call it.
+silently — your main stays asleep until you call it. If the reply tool is unavailable in your
+session, end your turn with the digest as your last message — the system captures it.

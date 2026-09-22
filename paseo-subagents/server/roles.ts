@@ -119,6 +119,7 @@ export function loadRoleTemplatesFromDir(rolesDir: string): Map<string, RoleTemp
 export interface ResolvedRole {
 	template: RoleTemplate;
 	providerEntry: string; // Actual daemon entry, for example "pi/cli-openai".
+	provider: string; // Short name: "pi" | "codex" | "claude" (same provider family as the catalog key).
 	config: string;
 	model: string | undefined;
 	thinking: string | undefined;
@@ -172,6 +173,7 @@ export function resolveRole(
 		role: {
 			template,
 			providerEntry: `${facet.defaultProviderEntry}/${override.model}`,
+			provider,
 			config: override.config,
 			model: override.model,
 			thinking: override.thinking,
@@ -185,4 +187,31 @@ export function resolveRole(
 /** initialPrompt = role prompt + --- + TASK ("user" channel — spec v11). */
 export function composeInitialPrompt(role: ResolvedRole, task: string): string {
 	return [role.template.systemPrompt, "---", `TASK:\n${task}`].filter(Boolean).join("\n\n");
+}
+
+/**
+ * #225: pre-approve the door MCP tools on the child's create config.
+ *
+ * Evidence (F11 smoke 2026-09-22): the claude child's mcp__paseo__reply_to_parent
+ * call hung 71 minutes in acceptEdits — the provider harness permission-gates MCP
+ * tools and a headless child has nobody to approve. The daemon has a first-class
+ * mechanism for exactly this: config.toolPolicy.preapproved — claude maps it to
+ * allowedTools (`mcp__paseo__reply_to_parent`), codex to `enabled_tools` +
+ * approval_mode "approve".
+ *
+ * pi does NOT support toolPolicy (agent-manager throws "Provider 'pi' cannot
+ * preapprove exact MCP tools") — pi children reach the door through the native
+ * extension tool, which is already ungated, so pi returns undefined.
+ */
+export function doorToolPolicy(
+	provider: string,
+	serverKey: string,
+): { preapproved: { kind: "mcp"; server: string; tool: string }[] } | undefined {
+	if (provider === "pi") return undefined;
+	return {
+		preapproved: [
+			{ kind: "mcp", server: serverKey, tool: "reply_to_parent" },
+			{ kind: "mcp", server: serverKey, tool: "ask_parent" },
+		],
+	};
 }

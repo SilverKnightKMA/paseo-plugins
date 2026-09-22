@@ -22,6 +22,8 @@ export interface CallerToken {
   depth: number;
   canSpawn: boolean;
   role?: string;
+  /** #226: resolved provider entry (e.g. "codex/gpt-5.6-luna") for the [child-report] identity header. */
+  providerModel?: string;
   /** The caller's own agentId (bound after agent.created) — used as subagent.parent. */
   boundAgentId?: string;
 }
@@ -31,7 +33,7 @@ const MAX_TOKENS = 1024;
 export class TokenRegistry {
   private readonly byToken = new Map<string, CallerToken>();
 
-  mint(parentId: string, title: string, meta?: { depth?: number; canSpawn?: boolean; role?: string }): string {
+  mint(parentId: string, title: string, meta?: { depth?: number; canSpawn?: boolean; role?: string; providerModel?: string }): string {
     // 192 bits of entropy — unguessable from the child side.
     const token = cryptoRandomToken();
     this.byToken.set(token, {
@@ -42,6 +44,7 @@ export class TokenRegistry {
       depth: meta?.depth ?? 1,
       canSpawn: meta?.canSpawn ?? false,
       role: meta?.role,
+      providerModel: meta?.providerModel,
     });
     if (this.byToken.size > MAX_TOKENS) {
       // Map preserves insertion order: drop the oldest entry.
@@ -58,7 +61,7 @@ export class TokenRegistry {
    * agentId is known. Fail closed when full: throw instead of silently evicting
    * a live token.
    */
-  adopt(token: string, meta: { parentId: string; title: string; depth?: number; canSpawn?: boolean; role?: string; boundAgentId?: string }): CallerToken {
+  adopt(token: string, meta: { parentId: string; title: string; depth?: number; canSpawn?: boolean; role?: string; providerModel?: string; boundAgentId?: string }): CallerToken {
     if (!/^[0-9a-f]{48}$/.test(token)) {
       throw new Error(`adopt: invalid token (length/charset) — refused`);
     }
@@ -74,6 +77,7 @@ export class TokenRegistry {
       depth: meta.depth ?? 1,
       canSpawn: meta.canSpawn ?? false,
       role: meta.role,
+      providerModel: meta.providerModel,
       boundAgentId: meta.boundAgentId,
     };
     this.byToken.set(token, entry);
