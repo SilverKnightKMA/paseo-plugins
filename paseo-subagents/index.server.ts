@@ -196,6 +196,13 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
           provider: role.providerEntry,
           modeId: role.modeId,
           title,
+          // F11: non-pi providers receive the pinned thinking level. Codex maps
+          // thinkingOptionId -> reasoning_effort (daemon codex adapter), Claude ->
+          // adaptive-thinking effort. Pi roles deliberately omit it — the engine
+          // subagent-types extension owns thinking for pi children (agents/*.md).
+          ...(role.thinking && !role.providerEntry.startsWith("pi/")
+            ? { thinkingOptionId: role.thinking }
+            : {}),
           mcpServers: {
             paseo: { type: "http" as const, url: childDoorUrl, alwaysLoad: true },
           },

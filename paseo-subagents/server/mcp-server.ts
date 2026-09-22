@@ -46,7 +46,7 @@ const REPLY_TOOL = {
 export const SPAWN_TOOL = {
   name: "spawn_subagent",
   description:
-    "Spawn a subagent with a pinned role (scout/researcher/worker/mermaid-maker/svg-maker). " +
+    "Spawn a subagent with a pinned role (scout/researcher/worker/mermaid-maker/svg-maker/claude-worker/codex-worker). " +
     "DETACH by design: returns {agentId, status:running} immediately — the child reports back " +
     "via [child-report] when done. Provider/model/thinking are pinned in the plugin repo; " +
     "the caller cannot override them (fail-closed on unknown roles).",

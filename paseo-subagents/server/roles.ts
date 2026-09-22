@@ -129,11 +129,17 @@ export interface ResolvedRole {
 
 /** Default runtime parameters for each role (example spec settings — repo wins). */
 export const DEFAULT_ROLE_OVERRIDES: Record<string, RoleOverride> = {
-	scout: { provider: "pi", config: "scout", model: "fci/deepseek-v4-flash", thinking: "low" },
-	researcher: { provider: "pi", config: "researcher", model: "fci/deepseek-v4-flash", thinking: "medium" },
-	worker: { provider: "pi", config: "worker", model: "fci/deepseek-v4-flash", thinking: "medium" },
-	"mermaid-maker": { provider: "pi", config: "mermaid-maker", model: "fci/deepseek-v4-flash", thinking: "low" },
-	"svg-maker": { provider: "pi", config: "svg-maker", model: "fci/deepseek-v4-flash", thinking: "low" },
+	// F11 2026-09-22: defaults mirror settings.json (repo wins; these are fail-safe only).
+	// Pi roles: model+thinking match pi-config agents/*.md @508dd96 (the originals).
+	scout: { provider: "pi", config: "scout", model: "mmcp/MiniMax-M3", thinking: "high" },
+	researcher: { provider: "pi", config: "researcher", model: "zaicp/glm-5.3-flash", thinking: "high" },
+	worker: { provider: "pi", config: "worker", model: "zaicp/glm-5.3", thinking: "high" },
+	"mermaid-maker": { provider: "pi", config: "mermaid-maker", model: "zaicp/glm-5.3-flash", thinking: "max" },
+	"svg-maker": { provider: "pi", config: "svg-maker", model: "zaicp/glm-5.3-flash", thinking: "max" },
+	// F11 new roles (user-pinned 2026-09-22): claude=fci/deepseek-v4-flash, codex=gpt-5.6-luna
+	// (verified live: codex exec --model gpt-5.6-luna → LUNA-OK), thinking medium cả hai.
+	"claude-worker": { provider: "claude", config: "acceptEdits", model: "fci/deepseek-v4-flash", thinking: "medium" },
+	"codex-worker": { provider: "codex", config: "full", model: "gpt-5.6-luna", thinking: "medium" },
 };
 
 /**
