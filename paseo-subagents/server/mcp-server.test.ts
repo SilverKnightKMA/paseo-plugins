@@ -467,3 +467,23 @@ describe("verify-miss adopt (pa1 #158)", () => {
     }
   });
 });
+
+describe("#223 Option 1 (b1): fixed door port range with ephemeral fallback", () => {
+  test("DOOR_PORT_RANGE is 10 sequential ports starting at 43210", async () => {
+    expect((await import("./mcp-server.js")).DOOR_PORT_RANGE).toEqual([43210, 43211, 43212, 43213, 43214, 43215, 43216, 43217, 43218, 43219]);
+  });
+
+  test("first server takes the fixed port; a second server on the same busy range falls back to a different port", async () => {
+    const reg = new TokenRegistry();
+    const a = await listenReplyServer({ registry, deliver: async () => {}, portRange: [49989] });
+    expect(a.port).toBe(49989); // range free → fixed port won
+    const b = await listenReplyServer({ registry: reg, deliver: async () => {}, portRange: [49989] });
+    expect(b.port).not.toBe(49989); // busy → ephemeral fallback, NOT an EADDRINUSE crash
+    expect(b.port).toBeGreaterThan(0);
+    await a.close();
+    const c = await listenReplyServer({ registry: reg, deliver: async () => {}, portRange: [49989] });
+    expect(c.port).toBe(49989); // range free again after close
+    await b.close();
+    await c.close();
+  });
+});

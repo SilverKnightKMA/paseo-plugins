@@ -18,6 +18,13 @@ import { join } from "node:path";
 import type { SubagentReplyRuntime } from "./hooks.js";
 import { MAIN_DOOR_KEY, CHILD_DOOR_KEY } from "./adopt.js";
 
+/**
+ * #223 Option 1 (v1.0.92): the plugin NO LONGER sends this message to the chat.
+ * The L1 mint still happens (silently) — discovery is the engine's job via
+ * door-state.json self-heal (pi-config v1.4.131) + env-door L2 + the fixed
+ * port range. The helpers stay exported for tests and for any future hatch
+ * that needs to render the URL a main would have received.
+ */
 export const DOOR_GRANT_PREFIX = "[door-grant]";
 
 export interface MainDoorState {

@@ -217,6 +217,29 @@ export async function startReplyServer(opts: {
   return listenReplyServer(opts);
 }
 
+/** #223 Option 1 (b1): the door prefers a FIXED port range so a main's
+ * PASEO_SUBAGENTS_DOOR env never goes stale across plugin restarts — the port
+ * it names keeps naming this door. Tried in order; first free wins. If the
+ * whole range is busy (another workspace's door, or a stray listener), fall
+ * back to an ephemeral port exactly like the pre-v1.0.92 behavior; the engine
+ * self-heal (pi-config v1.4.131 doorFetch) still re-resolves the real port from
+ * door-state.json, so correctness never depends on the range — availability does. */
+export const DOOR_PORT_RANGE: readonly number[] = [43210, 43211, 43212, 43213, 43214, 43215, 43216, 43217, 43218, 43219];
+
+function listenOn(server: http.Server, port: number, host: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const onError = (err: NodeJS.ErrnoException): void => {
+      server.removeListener("error", onError);
+      reject(err);
+    };
+    server.once("error", onError);
+    server.listen(port, host, () => {
+      server.removeListener("error", onError);
+      resolve();
+    });
+  });
+}
+
 export async function listenReplyServer(opts: {
   registry: TokenRegistry;
   deliver: DeliverFn;
@@ -229,6 +252,8 @@ export async function listenReplyServer(opts: {
   list?: ListChildrenFn;
   archive?: ArchiveChildrenFn;
   host?: string;
+  /** #223 (b1): candidate ports tried in order (default DOOR_PORT_RANGE); ephemeral fallback if all busy. */
+  portRange?: readonly number[];
   /** #147: if delivery has not finished after this many milliseconds, immediately
    * acknowledge "queued" — send() blocks until the parent ends its turn (an actual
    * 8+ minute hang while the parent was mid-turn). */
@@ -245,10 +270,18 @@ export async function listenReplyServer(opts: {
     });
   });
 
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, host, () => resolve());
-  });
+  let boundFixed = false;
+  for (const port of opts.portRange ?? DOOR_PORT_RANGE) {
+    try {
+      await listenOn(server, port, host);
+      boundFixed = true;
+      break;
+    } catch (err) {
+      if (!(err instanceof Error) || !/EADDRINUSE/i.test((err as NodeJS.ErrnoException).code ?? err.message)) throw err;
+      // Busy — try the next candidate.
+    }
+  }
+  if (!boundFixed) await listenOn(server, 0, host);
 
   const address = server.address();
   if (address === null || typeof address === "string") {

@@ -21,7 +21,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { TokenRegistry } from "./server/tokens.js";
-import { listenReplyServer, type ReplyServerHandle, type SpawnFn, type SpawnPoolFn, type CallerCaps, type SpawnArgs, type AskFn, type AnswerFn, type ListChildrenFn, type ArchiveChildrenFn } from "./server/mcp-server.js";
+import { listenReplyServer, DOOR_PORT_RANGE, type ReplyServerHandle, type SpawnFn, type SpawnPoolFn, type CallerCaps, type SpawnArgs, type AskFn, type AnswerFn, type ListChildrenFn, type ArchiveChildrenFn } from "./server/mcp-server.js";
 import { registerSubagentReplyHook, registerEnvDoorHook, PARENT_ENV, MAIN_MCP_KEY } from "./server/hooks.js";
 import { canAnswer, makeQuestionId, type PendingQuestion } from "./server/ask.js";
 import { composeInitialPrompt, resolveRole, doorToolPolicy, type PluginSettings } from "./server/roles.js";
@@ -43,7 +43,7 @@ import {
   type RemindableChild,
 } from "./server/idle-archive.js";
 import { isTerminal, lastAssistantText, autoReportEnvelope, type WatchedChild } from "./server/auto-report.js";
-import { doorGrantMessage, doorUrlForMain, envDoorUrlForMain, GrantLedger, readMainDoorState, shouldGrant } from "./server/grant.js";
+import { doorUrlForMain, envDoorUrlForMain, GrantLedger, readMainDoorState, shouldGrant } from "./server/grant.js";
 import { GrantStore, pluginDataDir, writeDoorState } from "./server/door-state.js";
 import { remindedPath, loadReminded, saveReminded } from "./server/reminded-store.js";
 import { adoptFromRecord } from "./server/adopt.js";
@@ -537,8 +537,9 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       } catch (err) {
         console.log(`[paseo-subagents] door-state/grants persistence unavailable: ${err instanceof Error ? err.message : String(err)}`);
       }
+      const fixed = DOOR_PORT_RANGE.includes(handle.port) ? "fixed" : "ephemeral fallback";
       console.log(
-        `[paseo-subagents] listening on 127.0.0.1:${handle.port} (allowFull=${allowFull ? "1" : "0"}); ` +
+        `[paseo-subagents] listening on 127.0.0.1:${handle.port} (${fixed}, allowFull=${allowFull ? "1" : "0"}); ` +
           `spawn children with --env PASEO_PARENT_AGENT_ID[=id][,PASEO_CHILD_MODE=knob] to get the scoped door`,
       );
     })
@@ -610,24 +611,17 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       if (!id || !grantLedger.allow(id)) return;
       const state = readMainDoorState(agentsRoot, id);
       if (!shouldGrant(state)) return; // Already has a door / child / archived / no record.
-      const api = paseoApi;
-      if (!api) return; // No lifecycle context yet — retry next turn.
       const grant = doorUrlForMain({ registry, getPort: () => replyServer?.port ?? null, allowFull, log: (m) => console.log(m) }, grantLedger, grantStore, id, agent.title ?? "main");
       if (!grant) return; // Door is not listening — retry next turn.
       const port = replyServer?.port;
       if (typeof port !== "number") return;
-      // Notify the chat only when it carries NEW information (first mint, or the
-      // port rotated since the last message) — not on every turn (F10).
-      const prevPort = grantStore.entryFor(id)?.lastNotifiedPort;
-      if (!grant.freshMint && prevPort === port) return;
-      void api.agents
-        .ref(id)
-        .send(doorGrantMessage(grant.url))
-        .then(() => {
-          grantStore.markNotified(id, port);
-          console.log(`[paseo-subagents] door grant sent -> agent ${id} (main without a door, L1, port ${port}${grant.freshMint ? ", fresh mint" : ", re-notified after rotation"})`);
-        })
-        .catch((err: unknown) => console.log(`[paseo-subagents] door-grant send failed (${id}): ${err instanceof Error ? err.message : String(err)}`));
+      // #223 Option 1: NO chat message. The model must never see the door URL —
+      // discovery is the engine's job (v1.4.131 doorFetch self-heal reads
+      // door-state.json + grants.json; env-door L2 assigns PASEO_SUBAGENTS_DOOR
+      // on session resume; the fixed port range keeps the env from going stale
+      // in the first place). The mint itself stays: without a bound token the
+      // door would 401 that main forever.
+      console.log(`[paseo-subagents] L1 token minted silently -> agent ${id} (main without a door, port ${port}${grant.freshMint ? ", fresh mint" : ", re-mint after reload"}); discovery via door-state.json self-heal — no [door-grant] message (#223)`);
     } catch (err) {
       console.log(`[paseo-subagents] door-grant check failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -641,6 +635,22 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   // reach the mint path instead of silently bailing on a null api.
   const offTurnStarted = safeOn("agent.turn_started", (_event: unknown, context: { paseo?: unknown }) => {
     if (context?.paseo) capturePaseo(context.paseo as PaseoSendSlice, "turn_started");
+  });
+
+  // #223 Option 1: close the capture gap — after a mid-turn reload the api could
+  // stay null until the next turn boundary (~15s+ of dead scanner). Every other
+  // agent.* lifecycle event the daemon emits also carries the paseo context;
+  // subscribing all of them means the FIRST thing the parent does after the
+  // reload (a permission request, an archive, anything) recaptures the api.
+  // safeOn keeps unknown names harmless.
+  const offPermissionRequested = safeOn("agent.permission_requested", (_event: unknown, context: { paseo?: unknown }) => {
+    if (context?.paseo) capturePaseo(context.paseo as PaseoSendSlice, "permission_requested");
+  });
+  const offPermissionResolved = safeOn("agent.permission_resolved", (_event: unknown, context: { paseo?: unknown }) => {
+    if (context?.paseo) capturePaseo(context.paseo as PaseoSendSlice, "permission_resolved");
+  });
+  const offArchivedEvt = safeOn("agent.archived", (_event: unknown, context: { paseo?: unknown }) => {
+    if (context?.paseo) capturePaseo(context.paseo as PaseoSendSlice, "archived");
   });
 
   const offHook = registerSubagentReplyHook(server, {
@@ -673,6 +683,9 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     if (idleTimer) clearInterval(idleTimer);
     offTurnEnded();
     offTurnStarted();
+    offPermissionRequested();
+    offPermissionResolved();
+    offArchivedEvt();
     clearInterval(poolTimer);
     replyServer?.close();
   };
