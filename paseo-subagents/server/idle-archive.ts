@@ -122,20 +122,33 @@ export function readAgentRecords(agentsRoot: string): AgentRecordLite[] {
  * genuinely settled. Group by parentId at send time; each child appears in at
  * most ONE reminder ever.
  */
+/**
+ * #234: the parent label a child is grouped by. Children carry one of two labels
+ * depending on who spawned them: plugin-spawned children get `subagent.parent`,
+ * while engine-ext/daemon-spawned children may only carry `paseo.parent-agent-id`.
+ * The Paseo UI counts BOTH; the plugin must too, or children become invisible-
+ * but-stuck (user report 2026-09-22: UI showed 6 subagents, list_subagents
+ * returned 0 — three had subagent.parent only, three paseo.parent-agent-id only).
+ */
+export function parentOf(labels: Record<string, string> | undefined): string | undefined {
+  const primary = labels?.["subagent.parent"];
+  if (primary && primary.length > 0) return primary;
+  const alt = labels?.["paseo.parent-agent-id"];
+  return alt && alt.length > 0 ? alt : undefined;
+}
+
 export function selectRemindable(
   records: AgentRecordLite[],
   nowMs: number,
   minutes: number,
   alreadyReminded: ReadonlySet<string>,
-  spawner: string = "paseo-subagents",
 ): RemindableChild[] {
   if (minutes <= 0) return [];
   const out: RemindableChild[] = [];
   for (const r of records) {
     if (r.archivedAt) continue;
     if (alreadyReminded.has(r.id)) continue;
-    if (r.labels?.["subagent.spawner"] !== spawner) continue;
-    const parentId = r.labels?.["subagent.parent"];
+    const parentId = parentOf(r.labels); // #234: either parent label, any spawner
     if (!parentId) continue;
     if (r.lastStatus !== "idle" && r.lastStatus !== "error" && r.lastStatus !== "closed") continue;
     if (r.attentionTimestamp && !(r.attentionReason && TERMINAL_ATTENTION_REASONS.has(r.attentionReason))) continue;
@@ -162,24 +175,23 @@ export function formatHousekeeping(children: RemindableChild[], remindAfterMinut
 }
 
 /**
- * Tier-2 selection (#224/#230): every plugin-spawned child that is terminal, quiet,
- * unarchived and past the force window — across ALL parents, decided per child.
- * Fail closed for any unknown value: running/waiting/initializing status, an
- * active non-terminal attention marker, an unknown last-activity age, an
- * already-archived record, or a child spawned by another owner all disqualify.
+ * Tier-2 selection (#224/#230/#234): every spawned child — any spawner, either
+ * parent label — that is terminal, quiet, unarchived and past the force window —
+ * across ALL parents, decided per child. Fail closed for any unknown value:
+ * running/waiting/initializing status, an active non-terminal attention marker,
+ * an unknown last-activity age, an already-archived record, or a record with no
+ * parent label at all (a main, not a child) all disqualify.
  */
 export function selectAutoArchivable(
   records: AgentRecordLite[],
   nowMs: number,
   minutes: number,
-  spawner: string = "paseo-subagents",
 ): ArchivableChild[] {
   if (minutes <= 0) return [];
   const out: ArchivableChild[] = [];
   for (const r of records) {
     if (r.archivedAt) continue;
-    if (r.labels?.["subagent.spawner"] !== spawner) continue;
-    const parentId = r.labels?.["subagent.parent"];
+    const parentId = parentOf(r.labels); // #234: either parent label, any spawner
     if (!parentId) continue;
     if (r.lastStatus !== "idle" && r.lastStatus !== "error" && r.lastStatus !== "closed") continue;
     // A terminal attention marker (finished/error) is the daemon's normal settled

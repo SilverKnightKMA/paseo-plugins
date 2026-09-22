@@ -4,6 +4,7 @@ import {
 	selectAutoArchivable,
 	selectRemindable,
 	formatHousekeeping,
+	parentOf,
 	DEFAULT_REMIND_AFTER_MINUTES,
 	DEFAULT_ARCHIVE_AFTER_DAYS,
 	MAX_ARCHIVE_AFTER_DAYS,
@@ -86,12 +87,16 @@ describe("selectAutoArchivable (#224/#230 tier 2 — per-child, fail-closed)", (
 		).toEqual([]);
 	});
 
-	test("already-archived, unknown-age, and non-plugin children are skipped", () => {
+	test("already-archived, unknown-age, and no-parent-label records are skipped; #234 either parent label counts", () => {
 		expect(selectAutoArchivable([child("gone", { archivedAt: new Date(NOW).toISOString() })], NOW, 15)).toEqual([]);
 		expect(selectAutoArchivable([child("mystery", { lastActivityAt: undefined })], NOW, 15)).toEqual([]);
-		expect(
-			selectAutoArchivable([child("piext", { labels: { "subagent.parent": "P1" } })], NOW, 15),
-		).toEqual([]); // pi-ext child: no subagent.spawner label — not ours to archive.
+		// #234: a child with NO parent label at all (a main, or unlabeled agent) is skipped.
+		expect(selectAutoArchivable([child("main", { labels: { "subagent.role": "worker" } })], NOW, 15)).toEqual([]);
+		// #234 regression (user report: UI 6 vs tool 0): engine-ext children carry
+		// subagent.parent WITHOUT subagent.spawner — now visible/selectable.
+		expect(selectAutoArchivable([child("ext", { labels: { "subagent.parent": "P1" } })], NOW, 15).map((c) => c.id)).toEqual(["ext"]);
+		// ...and daemon-spawned children may carry ONLY paseo.parent-agent-id.
+		expect(selectAutoArchivable([child("daemon", { labels: { "paseo.parent-agent-id": "P1" } })], NOW, 15).map((c) => c.id)).toEqual(["daemon"]);
 	});
 
 	test("children of DIFFERENT parents are selected independently — one stuck parent cannot hold the set", () => {
@@ -131,13 +136,24 @@ describe("selectRemindable (#230 tier 1 — once per child, tool guidance)", () 
 		expect(selectRemindable([child("c1")], NOW, 0, new Set())).toEqual([]);
 	});
 
-	test("tier 1 uses the SAME fail-closed gates: running / question-attention / archived / foreign children all skip", () => {
+	test("#234 parentOf: subagent.parent wins; falls back to paseo.parent-agent-id; neither → undefined", () => {
+	expect(parentOf({ "subagent.parent": "P1", "paseo.parent-agent-id": "P2" })).toBe("P1");
+	expect(parentOf({ "paseo.parent-agent-id": "P2" })).toBe("P2");
+	expect(parentOf({ "subagent.role": "scout" })).toBeUndefined();
+	expect(parentOf(undefined)).toBeUndefined();
+	expect(parentOf({ "subagent.parent": "", "paseo.parent-agent-id": "" })).toBeUndefined();
+});
+
+test("tier 1 uses the SAME fail-closed gates: running / question-attention / archived / no-parent-label all skip", () => {
 		expect(selectRemindable([child("run", { lastStatus: "running" })], NOW, 15, new Set())).toEqual([]);
 		expect(
 			selectRemindable([child("asked", { attentionTimestamp: new Date(NOW - 18 * 60_000).toISOString(), attentionReason: "question" })], NOW, 15, new Set()),
 		).toEqual([]);
 		expect(selectRemindable([child("gone", { archivedAt: new Date(NOW).toISOString() })], NOW, 15, new Set())).toEqual([]);
-		expect(selectRemindable([child("piext", { labels: { "subagent.parent": "P1" } })], NOW, 15, new Set())).toEqual([]);
+		// #234: no parent label at all → skip; BUT a spawner-less child with a parent
+		// label (engine-ext era) is now IN scope — regression for the UI-6-vs-tool-0 report.
+		expect(selectRemindable([child("mainish", { labels: { "subagent.role": "worker" } })], NOW, 15, new Set())).toEqual([]);
+		expect(selectRemindable([child("ext", { labels: { "subagent.parent": "P1" } })], NOW, 15, new Set()).map((c) => c.id)).toEqual(["ext"]);
 	});
 
 	test("an unreminded sibling of a reminded child is still selected (per-child, not per-parent)", () => {

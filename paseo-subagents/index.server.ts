@@ -37,6 +37,7 @@ import {
   selectAutoArchivable,
   selectRemindable,
   formatHousekeeping,
+  parentOf,
   DEFAULT_REMIND_AFTER_MINUTES,
   DEFAULT_ARCHIVE_AFTER_DAYS,
   MAX_ARCHIVE_AFTER_DAYS,
@@ -238,9 +239,11 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     const childDoorUrl = `http://127.0.0.1:${port}/mcp?caller=${token}`;
 
     const labels: Record<string, string> = {
-      // idle-archive: the plugin reminds only children IT spawned. Pi ext children
-      // also carry subagent.parent, so omitting this label causes duplicate reminders
-      // (E2E 18:03: parent cf76ad71 received reminders from both engines).
+      // Provenance label only (#234): selection/remind/archive now key on the
+      // PARENT labels (subagent.parent ?? paseo.parent-agent-id) for every child
+      // regardless of spawner. The engine-side #129 CLI reminder that made the
+      // dual-spawner era race (E2E 18:03) is retired in pi-config v1.4.132, so
+      // this label no longer gates anything — it just records who spawned.
       "subagent.spawner": "paseo-subagents",
       "subagent.role": args.role,
       "subagent.depth": String(caller.depth + 1),
@@ -447,18 +450,18 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     }
   };
 
-  // #230: list_subagents — the caller sees ONLY its own unarchived children.
+  // #230/#234: list_subagents (either parent label — same set as the Paseo UI) — the caller sees ONLY its own unarchived children.
   const listChildren: ListChildrenFn = async (parentId) => {
     try {
       const nowMs = Date.now();
       const rows = readAgentRecords(agentsRoot)
-        .filter((r) => !r.archivedAt && r.labels?.["subagent.parent"] === parentId && r.labels?.["subagent.spawner"] === "paseo-subagents")
+        .filter((r) => !r.archivedAt && parentOf(r.labels) === parentId)
         .map((r) => {
           const at = r.lastActivityAt ? Date.parse(r.lastActivityAt) : NaN;
           const idle = Number.isNaN(at) ? "unknown" : `${Math.max(0, Math.floor((nowMs - at) / 60_000))}m`;
           return `- ${r.id} · ${r.labels?.["subagent.role"] ?? "unknown-role"} · ${r.lastStatus ?? "unknown"} · idle ${idle} · ${r.title ?? "untitled"}`;
         });
-      if (rows.length === 0) return { text: "You have no unarchived subagents from this plugin. (Archived children are hidden; messaging an archived child auto-unarchives it.)" };
+      if (rows.length === 0) return { text: "You have no unarchived subagents. (Archived children are hidden; messaging an archived child auto-unarchives it.)" };
       return {
         text: `${rows.length} unarchived subagent(s):\n${rows.join("\n")}\nTo archive any of them call archive_subagent with their agentIds (soft delete).`,
       };
@@ -467,7 +470,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     }
   };
 
-  // #230: archive_subagent — the model decides; the plugin only guards ownership
+  // #230/#234: archive_subagent (ownership guard: either parent label) — the model decides; the plugin only guards ownership
   // (subagent.parent label must equal the caller) and executes the soft delete.
   const archiveChildren: ArchiveChildrenFn = async (parentId, agentIds) => {
     const api = paseoApi;
@@ -483,7 +486,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
         lines.push(`${raw}: not-found`);
         continue;
       }
-      if (rec.labels?.["subagent.parent"] !== parentId) {
+      if (parentOf(rec.labels) !== parentId) {
         lines.push(`${id.slice(0, 8)}: refused (not your subagent)`);
         continue;
       }
