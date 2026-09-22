@@ -69,6 +69,19 @@ export default function contribute(client: PluginClientContext) {
     },
   });
 
+  // Doorbell wake-signal items (server/doorbell-server.ts, kind "doorbell" v1)
+  // are renderer-less BY DESIGN — invisible wake pings, not content. App 0.8.0
+  // shows "Plugin timeline item unavailable." for plugin items whose owning
+  // plugin registers no renderer — the doorbell-hide transformer above covers
+  // the live/projected path; this null renderer covers the canonical/history
+  // path where transformers do not run (2026-09-22 UI audit).
+  client.addTimelineRenderer({
+    kind: "doorbell",
+    version: 1,
+    schema: z.object({ bell: z.string(), file: z.string(), ts: z.string() }),
+    Component: () => null,
+  });
+
   client.addTimelineRenderer({
     kind: "om-history",
     version: 1,

@@ -1,4 +1,5 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
+import { z } from "zod";
 import { MemoryPanel } from "./client/panel.js";
 
 /**
@@ -8,6 +9,18 @@ import { MemoryPanel } from "./client/panel.js";
  * memory-curator); the model has no write path (memory-guard, P1d).
  */
 export default function contribute(client: PluginClientContext) {
+	// Doorbell wake-signal items (server/doorbell-server.ts, kind "doorbell" v1)
+	// are renderer-less BY DESIGN — invisible wake pings, not content. App 0.8.0
+	// shows "Plugin timeline item unavailable." for plugin items whose owning
+	// plugin registers no renderer — register a null renderer so bells stay
+	// invisible as designed (2026-09-22 UI audit).
+	client.addTimelineRenderer({
+		kind: "doorbell",
+		version: 1,
+		schema: z.object({ bell: z.string(), file: z.string(), ts: z.string() }),
+		Component: () => null,
+	});
+
 	client.addWorkspacePanel({
 		id: "memory",
 		title: "Memory",
