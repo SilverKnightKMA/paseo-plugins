@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { doorGrantMessage, envDoorUrlForMain, GrantLedger, mintDoorForMain, readMainDoorState, shouldGrant } from "./grant.js";
+import { doorGrantMessage, doorUrlForMain, envDoorUrlForMain, GrantLedger, mintDoorForMain, readMainDoorState, shouldGrant, type GrantPersistence } from "./grant.js";
 import { TokenRegistry } from "./tokens.js";
 
 let root: string;
@@ -137,7 +137,59 @@ describe("mintDoorForMain + doorGrantMessage (#155)", () => {
     expect(rt.registry.size).toBe(0);
   });
 
-  test("doorGrantMessage formats '[door-grant] <url>'", () => {
-    expect(doorGrantMessage("http://x/mcp?caller=t1")).toBe("[door-grant] http://x/mcp?caller=t1");
+  test("doorGrantMessage is self-describing (F10 #219) — line 1 keeps the greppable prefix", () => {
+    const msg = doorGrantMessage("http://x/mcp?caller=t1");
+    expect(msg.split("\n")[0]).toBe("[door-grant] http://x/mcp?caller=t1");
+    expect(msg).toContain("no action needed");
+    expect(msg).toContain("tools/call");
+  });
+});
+
+describe("doorUrlForMain — reuse-or-mint across restarts (F10 #219)", () => {
+  test("RAM first: the second call in one process reuses the token and the fresh port", () => {
+    const rt = fakeRt(40001);
+    const l = new GrantLedger();
+    const g1 = doorUrlForMain(rt, l, null, "main-a", "A")!;
+    expect(g1.freshMint).toBe(true);
+    rt.getPort = () => 40002; // Door rebound within the process — port rotated, ledger keeps the identity.
+    const g2 = doorUrlForMain(rt, l, null, "main-a", "A")!;
+    expect(g2.freshMint).toBe(false);
+    expect(g2.token).toBe(g1.token); // Same identity — the token is reused, not re-minted.
+    expect(g2.url).toBe(`http://127.0.0.1:40002/mcp?caller=${g1.token}`);
+  });
+
+  test("persisted store: a PREVIOUS process token is adopted (never re-minted) and the URL gets the live port", () => {
+    const rt = fakeRt(41001);
+    const persisted: Record<string, { token: string; title: string }> = {};
+    const store: GrantPersistence = {
+      restore: (id) => persisted[id] ?? null,
+      persist: (id, token, title) => {
+        persisted[id] = { token, title };
+      },
+    };
+    const g1 = doorUrlForMain(rt, new GrantLedger(), store, "main-b", "B")!;
+    expect(g1.freshMint).toBe(true);
+    expect(persisted["main-b"]?.token).toBe(g1.token);
+    // New plugin process: fresh registry + fresh ledger, same store.
+    const rt2 = fakeRt(41002);
+    const g2 = doorUrlForMain(rt2, new GrantLedger(), store, "main-b", "B")!;
+    expect(g2.freshMint).toBe(false);
+    expect(g2.token).toBe(g1.token);
+    expect(rt2.registry.verify(g1.token)?.boundAgentId).toBe("main-b");
+    expect(g2.url).toBe(`http://127.0.0.1:41002/mcp?caller=${g1.token}`);
+  });
+
+  test("invalid persisted token (charset) falls through to a fresh mint", () => {
+    const rt = fakeRt(42001);
+    const store: GrantPersistence = {
+      restore: () => ({ token: "not-hex-at-all", title: "B" }),
+      persist: () => {},
+    };
+    const g = doorUrlForMain(rt, new GrantLedger(), store, "main-c", "C")!;
+    expect(g.freshMint).toBe(true);
+  });
+
+  test("null port → null, no mint", () => {
+    expect(doorUrlForMain(fakeRt(null), new GrantLedger(), null, "main-d", "D")).toBeNull();
   });
 });

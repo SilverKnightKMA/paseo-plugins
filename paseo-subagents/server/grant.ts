@@ -68,6 +68,15 @@ export function shouldGrant(state: MainDoorState): boolean {
   return state.found && !state.isChild && !state.archived && !state.hasDoor;
 }
 
+/** Cross-process grant persistence (F10 #219): a GrantStore-backed object so
+ *  grant.ts stays free of fs imports and unit-testable. */
+export interface GrantPersistence {
+	/** Token granted by a PREVIOUS plugin process, or null. */
+	restore(agentId: string): { token: string; title: string } | null;
+	/** Remember a freshly minted token for future processes. */
+persist(agentId: string, token: string, title: string): void;
+}
+
 /** Exactly one grant per process per agent — resets when the plugin restarts.
  *  Store the token so L1 (turn_ended message) and L2 (session_open env) SHARE
  *  one token for the same agent instead of minting twice. */
@@ -100,21 +109,48 @@ export class GrantLedger {
  * null when ineligible (child/archived/already has a door/no record) or when the
  * door is not listening. Do NOT write the record.
  */
-export function envDoorUrlForMain(agentsRoot: string, rt: SubagentReplyRuntime, ledger: GrantLedger, agentId: string, title: string): string | null {
-  const state = readMainDoorState(agentsRoot, agentId);
-  if (!shouldGrant(state)) return null;
-  const existing = ledger.tokenFor(agentId);
-  if (existing) {
-    const port = rt.getPort();
-    if (port === null) return null;
-    return `http://127.0.0.1:${port}/mcp?caller=${existing}`;
-  }
-  const url = mintDoorForMain(rt, agentId, title);
-  if (!url) return null;
-  const token = new URL(url).searchParams.get("caller");
-  if (!token) return null;
-  ledger.mark(agentId, token);
-  return url;
+export function envDoorUrlForMain(
+	agentsRoot: string,
+	rt: SubagentReplyRuntime,
+	ledger: GrantLedger,
+	agentId: string,
+	title: string,
+	store: GrantPersistence | null = null,
+): string | null {
+	const state = readMainDoorState(agentsRoot, agentId);
+	if (!shouldGrant(state)) return null;
+	return doorUrlForMain(rt, ledger, store, agentId, title)?.url ?? null;
+}
+
+/** Reuse-or-mint one door grant for a doorless main (F10 #219). Resolution
+ *  order: (1) token granted in THIS process (RAM ledger — L1/L2 share it),
+ *  (2) token persisted by a PREVIOUS process (adopted back into the registry,
+ *  never re-minted — a rotating port must not rotate identities), (3) fresh
+ *  mint, persisted via the store. Returns null when the door is not listening. */
+export function doorUrlForMain(
+	rt: SubagentReplyRuntime,
+	ledger: GrantLedger,
+	store: GrantPersistence | null,
+	agentId: string,
+	title: string,
+): { url: string; token: string; freshMint: boolean } | null {
+	const port = rt.getPort();
+	if (port === null) return null;
+	const ram = ledger.tokenFor(agentId);
+	if (ram) return { url: `http://127.0.0.1:${port}/mcp?caller=${ram}`, token: ram, freshMint: false };
+	const saved = store?.restore(agentId) ?? null;
+	if (saved && /^[0-9a-f]{48}$/.test(saved.token)) {
+		rt.registry.adopt(saved.token, { parentId: agentId, title: saved.title, depth: 0, canSpawn: true, boundAgentId: agentId });
+		ledger.mark(agentId, saved.token);
+		return { url: `http://127.0.0.1:${port}/mcp?caller=${saved.token}`, token: saved.token, freshMint: false };
+	}
+	const url = mintDoorForMain(rt, agentId, title);
+	if (!url) return null;
+	const token = new URL(url).searchParams.get("caller");
+	if (!token) return null;
+	ledger.mark(agentId, token);
+	store?.persist(agentId, token, title);
+	return { url, token, freshMint: true };
 }
 
 /**
@@ -132,7 +168,14 @@ export function mintDoorForMain(rt: SubagentReplyRuntime, agentId: string, title
   return url;
 }
 
-/** Format the grant message (constant prefix makes it easy for the main/E2E tests to grep). */
+/** Format the grant message. F10 (#219, user objection 2026-09-22): a bare URL
+ *  injected as a user message is rejected — the message must describe itself.
+ *  The constant prefix stays on line 1 for the main/E2E greps. */
 export function doorGrantMessage(url: string): string {
-  return `${DOOR_GRANT_PREFIX} ${url}`;
+	return [
+		`${DOOR_GRANT_PREFIX} ${url}`,
+		"paseo-subagents door URL for this session — the door port rotated (plugin restarted).",
+		"- Engine v1.4.131+: door tools re-discover the port automatically — no action needed.",
+		"- Older engine code: POST MCP JSON-RPC tools/call to the URL above (spawn_subagent, spawn_pool, answer_child).",
+	].join("\n");
 }

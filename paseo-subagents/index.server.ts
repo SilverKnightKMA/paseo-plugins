@@ -39,7 +39,8 @@ import {
   reminderArmed,
   DEFAULT_REMIND_MINUTES,
 } from "./server/idle-archive.js";
-import { doorGrantMessage, envDoorUrlForMain, GrantLedger, mintDoorForMain, readMainDoorState, shouldGrant } from "./server/grant.js";
+import { doorGrantMessage, doorUrlForMain, envDoorUrlForMain, GrantLedger, readMainDoorState, shouldGrant } from "./server/grant.js";
+import { GrantStore, pluginDataDir, writeDoorState } from "./server/door-state.js";
 import { adoptFromRecord } from "./server/adopt.js";
 
 /** Absolute maximum depth (spec section 6): main=0 → child=1 → grandchild=2. */
@@ -347,6 +348,13 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   })
     .then((handle) => {
       replyServer = handle;
+      try {
+        const adopted = grantStore.adoptAll(registry);
+        writeDoorState(doorDataDir, handle.port);
+        console.log(`[paseo-subagents] door-state persisted (port ${handle.port}); ${adopted} grant token(s) adopted from grants.json (F10)`);
+      } catch (err) {
+        console.log(`[paseo-subagents] door-state/grants persistence unavailable: ${err instanceof Error ? err.message : String(err)}`);
+      }
       console.log(
         `[paseo-subagents] listening on 127.0.0.1:${handle.port} (allowFull=${allowFull ? "1" : "0"}); ` +
           `spawn children with --env PASEO_PARENT_AGENT_ID[=id][,PASEO_CHILD_MODE=knob] to get the scoped door`,
@@ -408,6 +416,10 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   // unarchived mains without doors. Self-heals after restart (empty RAM ledger →
   // grant again next turn). Do NOT write the record.
   const grantLedger = new GrantLedger();
+  // F10 (#219): door port + grant tokens survive plugin restarts via
+  // ~/.paseo/plugin-data/paseo-subagents/{door-state.json,grants.json}.
+  const doorDataDir = pluginDataDir();
+  const grantStore = new GrantStore(doorDataDir);
   const onTurnEnded = (event: unknown, context: { paseo?: unknown }): void => {
     if (context?.paseo) capturePaseo(context.paseo as PaseoSendSlice, "turn_ended");
     try {
@@ -418,14 +430,21 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       if (!shouldGrant(state)) return; // Already has a door / child / archived / no record.
       const api = paseoApi;
       if (!api) return; // No lifecycle context yet — retry next turn.
-      const url = mintDoorForMain({ registry, getPort: () => replyServer?.port ?? null, allowFull, log: (m) => console.log(m) }, id, agent.title ?? "main");
-      if (!url) return; // Door is not listening — retry next turn.
-      const grantedToken = new URL(url).searchParams.get("caller");
-      if (grantedToken) grantLedger.mark(id, grantedToken); // L2 reuses this exact token.
+      const grant = doorUrlForMain({ registry, getPort: () => replyServer?.port ?? null, allowFull, log: (m) => console.log(m) }, grantLedger, grantStore, id, agent.title ?? "main");
+      if (!grant) return; // Door is not listening — retry next turn.
+      const port = replyServer?.port;
+      if (typeof port !== "number") return;
+      // Notify the chat only when it carries NEW information (first mint, or the
+      // port rotated since the last message) — not on every turn (F10).
+      const prevPort = grantStore.entryFor(id)?.lastNotifiedPort;
+      if (!grant.freshMint && prevPort === port) return;
       void api.agents
         .ref(id)
-        .send(doorGrantMessage(url))
-        .then(() => console.log(`[paseo-subagents] door grant sent -> agent ${id} (main without a door, L1)`))
+        .send(doorGrantMessage(grant.url))
+        .then(() => {
+          grantStore.markNotified(id, port);
+          console.log(`[paseo-subagents] door grant sent -> agent ${id} (main without a door, L1, port ${port}${grant.freshMint ? ", fresh mint" : ", re-notified after rotation"})`);
+        })
         .catch((err: unknown) => console.log(`[paseo-subagents] door-grant send failed (${id}): ${err instanceof Error ? err.message : String(err)}`));
     } catch (err) {
       console.log(`[paseo-subagents] door-grant check failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -453,7 +472,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     log: (message) => console.log(message),
   }, {
     agentsRoot,
-    envDoorUrlFor: (agentId, title) => envDoorUrlForMain(agentsRoot, { registry, getPort: () => replyServer?.port ?? null, allowFull, log: (m) => console.log(m) }, grantLedger, agentId, title),
+    envDoorUrlFor: (agentId, title) => envDoorUrlForMain(agentsRoot, { registry, getPort: () => replyServer?.port ?? null, allowFull, log: (m) => console.log(m) }, grantLedger, agentId, title, grantStore),
   });
 
   return () => {
