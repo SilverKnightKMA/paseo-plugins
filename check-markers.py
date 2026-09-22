@@ -17,7 +17,6 @@ doc = re.findall(r"Line prefix \(exact\)\s*\|\s*`([^`]+)`", spec)
 LIVE = {
     "[auto-report] ": ("agent-health/index.client.tsx", '"auto-report"'),
     "[channel-nack] ": ("agent-health/index.client.tsx", '"channel-nack"'),
-    '<machine-notice kind="pool-notice">': ("agent-health/index.client.tsx", '<machine-notice kind="'),
     "Lessons from past sessions": ("lessons/shared/parser.ts", 'LESSONS_PREFIX = "Lessons from past sessions"'),
 }
 DEPRECATED = {"> om: ", "> zw ⚠ "}
