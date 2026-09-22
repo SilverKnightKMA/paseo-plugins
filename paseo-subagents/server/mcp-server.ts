@@ -93,6 +93,39 @@ export const POOL_TOOL = {
   },
 };
 
+/** list_subagents — #230: parent reviews its own UNARCHIVED children (like the app's subagents button). */
+export const LIST_TOOL = {
+  name: "list_subagents",
+  description:
+    "List your own subagents that are NOT archived: agentId-8, role, status, idle minutes, title. " +
+    "Use it to decide what to clean up, then call archive_subagent with the agentIds you choose.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {},
+    additionalProperties: false,
+  },
+};
+
+/** archive_subagent — #230: the model decides what to archive (works for every provider — no CLI). */
+export const ARCHIVE_TOOL = {
+  name: "archive_subagent",
+  description:
+    "Archive YOUR OWN subagents by agentId (soft delete — messaging a child auto-unarchives it, " +
+    "so resume-by-name survives). Only subagents spawned for you can be archived; anything else is refused.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      agentIds: {
+        type: "array" as const,
+        description: "1-50 agent ids (full UUID or 8-char prefix) of YOUR subagents to archive.",
+        items: { type: "string" as const },
+      },
+    },
+    required: ["agentIds"],
+    additionalProperties: false,
+  },
+};
+
 export interface SpawnArgs {
   role: string;
   task: string;
@@ -129,6 +162,12 @@ export type AnswerFn = (
   questionId: string,
   answer: string,
 ) => Promise<{ delivered: true } | { error: string }>;
+
+/** #230: list the caller's own unarchived children — returns the text for the tool result. */
+export type ListChildrenFn = (parentId: string) => Promise<{ text: string } | { error: string }>;
+
+/** #230: archive the caller's own children by id — returns per-id results as text. */
+export type ArchiveChildrenFn = (parentId: string, agentIds: string[]) => Promise<{ text: string } | { error: string }>;
 
 interface JsonRpcRequest {
   jsonrpc: "2.0";
@@ -187,6 +226,8 @@ export async function listenReplyServer(opts: {
   spawnPool?: SpawnPoolFn;
   ask?: AskFn;
   answer?: AnswerFn;
+  list?: ListChildrenFn;
+  archive?: ArchiveChildrenFn;
   host?: string;
   /** #147: if delivery has not finished after this many milliseconds, immediately
    * acknowledge "queued" — send() blocks until the parent ends its turn (an actual
@@ -228,7 +269,7 @@ export async function listenReplyServer(opts: {
 async function handle(
   req: http.IncomingMessage,
   res: http.ServerResponse,
-  opts: { registry: TokenRegistry; deliver: DeliverFn; adopt?: (token: string) => boolean; spawn?: SpawnFn; spawnPool?: SpawnPoolFn; ask?: AskFn; answer?: AnswerFn; deliverAckMs?: number },
+  opts: { registry: TokenRegistry; deliver: DeliverFn; adopt?: (token: string) => boolean; spawn?: SpawnFn; spawnPool?: SpawnPoolFn; ask?: AskFn; answer?: AnswerFn; list?: ListChildrenFn; archive?: ArchiveChildrenFn; deliverAckMs?: number },
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://local");
 
@@ -307,7 +348,7 @@ interface DispatchCtx {
   parentId: string;
   title: string;
   caps: CallerCaps;
-  opts: { registry: TokenRegistry; deliver: DeliverFn; spawn?: SpawnFn; spawnPool?: SpawnPoolFn; ask?: AskFn; answer?: AnswerFn; deliverAckMs?: number };
+  opts: { registry: TokenRegistry; deliver: DeliverFn; spawn?: SpawnFn; spawnPool?: SpawnPoolFn; ask?: AskFn; answer?: AnswerFn; list?: ListChildrenFn; archive?: ArchiveChildrenFn; deliverAckMs?: number };
 }
 
 /** #147: by default, return the acknowledgement after 2s when the parent is mid-turn. */
@@ -336,9 +377,9 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
       return { jsonrpc: "2.0", id: id, result: {} };
     case "tools/list": {
       // Filter by caller (spec 4.3): canSpawn=false sees only reply_to_parent.
-      // Child (canSpawn=false): reply + ask_parent. Parent (canSpawn): reply + spawn + pool + answer_child.
+      // Child (canSpawn=false): reply + ask_parent. Parent (canSpawn): reply + spawn + pool + answer + list_subagents + archive_subagent (#230).
       const tools = ctx.caps.canSpawn
-        ? [REPLY_TOOL, SPAWN_TOOL, POOL_TOOL, ANSWER_TOOL]
+        ? [REPLY_TOOL, SPAWN_TOOL, POOL_TOOL, ANSWER_TOOL, LIST_TOOL, ARCHIVE_TOOL]
         : [REPLY_TOOL, ASK_TOOL];
       return { jsonrpc: "2.0", id: id, result: { tools } };
     }
@@ -495,7 +536,39 @@ async function dispatch(message: JsonRpcRequest, ctx: DispatchCtx): Promise<unkn
           return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `answer_child failed: ${err instanceof Error ? err.message : String(err)}` }], isError: true } };
         }
       }
-      return jsonRpcError(id, -32602, `unknown tool '${String(params.name)}': this endpoint exposes ${ctx.caps.canSpawn ? "reply_to_parent, spawn_subagent, spawn_pool, answer_child" : "reply_to_parent, ask_parent"}`);
+      if (params.name === LIST_TOOL.name) {
+        const list = ctx.opts.list;
+        if (!list) return jsonRpcError(id, -32601, `list_subagents is not enabled on this door`);
+        if (!ctx.caps.canSpawn) return jsonRpcError(id, -32901, `list_subagents refused: this caller's role cannot list children (canSpawn=false, spec section 6)`);
+        try {
+          const r = await list(ctx.parentId);
+          if ("error" in r) {
+            return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `list_subagents failed: ${r.error}` }], isError: true } };
+          }
+          return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: r.text }], isError: false } };
+        } catch (err) {
+          return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `list_subagents failed: ${err instanceof Error ? err.message : String(err)}` }], isError: true } };
+        }
+      }
+      if (params.name === ARCHIVE_TOOL.name) {
+        const archive = ctx.opts.archive;
+        if (!archive) return jsonRpcError(id, -32601, `archive_subagent is not enabled on this door`);
+        if (!ctx.caps.canSpawn) return jsonRpcError(id, -32901, `archive_subagent refused: this caller's role cannot archive children (canSpawn=false, spec section 6)`);
+        const args = (params.arguments ?? {}) as { agentIds?: unknown };
+        if (!Array.isArray(args.agentIds) || args.agentIds.length === 0 || args.agentIds.length > 50 || !args.agentIds.every((v): v is string => typeof v === "string" && v.length > 0)) {
+          return jsonRpcError(id, -32900, "invalid arguments: 'agentIds' must be an array of 1-50 non-empty strings");
+        }
+        try {
+          const r = await archive(ctx.parentId, args.agentIds);
+          if ("error" in r) {
+            return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `archive_subagent failed: ${r.error}` }], isError: true } };
+          }
+          return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: r.text }], isError: false } };
+        } catch (err) {
+          return { jsonrpc: "2.0", id: id, result: { content: [{ type: "text", text: `archive_subagent failed: ${err instanceof Error ? err.message : String(err)}` }], isError: true } };
+        }
+      }
+      return jsonRpcError(id, -32602, `unknown tool '${String(params.name)}': this endpoint exposes ${ctx.caps.canSpawn ? "reply_to_parent, spawn_subagent, spawn_pool, answer_child, list_subagents, archive_subagent" : "reply_to_parent, ask_parent"}`);
     }
     default:
       return jsonRpcError(id, -32601, `method not found: ${message.method}`);

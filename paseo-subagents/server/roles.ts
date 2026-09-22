@@ -33,6 +33,10 @@ export interface PluginSettings {
 	poolConcurrency?: number;
 	syncProfilesOnLoad?: boolean;
 	rolePromptChannel?: "user" | "append" | "replace"; // Defaults to "user".
+	/** #230 tier 1: remind the parent once per settled child after this many idle minutes (0 = off). */
+	remindAfterMinutes?: number;
+	/** #230 tier 2: plugin force-archives unarchived children after this many days (0 = off, max 90). */
+	archiveAfterDays?: number;
 }
 
 /** Built-in config-level catalog by provider (spec Source Catalog section). */

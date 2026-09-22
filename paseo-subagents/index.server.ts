@@ -21,7 +21,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { TokenRegistry } from "./server/tokens.js";
-import { listenReplyServer, type ReplyServerHandle, type SpawnFn, type SpawnPoolFn, type CallerCaps, type SpawnArgs, type AskFn, type AnswerFn } from "./server/mcp-server.js";
+import { listenReplyServer, type ReplyServerHandle, type SpawnFn, type SpawnPoolFn, type CallerCaps, type SpawnArgs, type AskFn, type AnswerFn, type ListChildrenFn, type ArchiveChildrenFn } from "./server/mcp-server.js";
 import { registerSubagentReplyHook, registerEnvDoorHook, PARENT_ENV, MAIN_MCP_KEY } from "./server/hooks.js";
 import { canAnswer, makeQuestionId, type PendingQuestion } from "./server/ask.js";
 import { composeInitialPrompt, resolveRole, doorToolPolicy, type PluginSettings } from "./server/roles.js";
@@ -35,11 +35,17 @@ import {
 import {
   readAgentRecords,
   selectAutoArchivable,
-  DEFAULT_REMIND_MINUTES,
+  selectRemindable,
+  formatHousekeeping,
+  DEFAULT_REMIND_AFTER_MINUTES,
+  DEFAULT_ARCHIVE_AFTER_DAYS,
+  MAX_ARCHIVE_AFTER_DAYS,
+  type RemindableChild,
 } from "./server/idle-archive.js";
 import { isTerminal, lastAssistantText, autoReportEnvelope, type WatchedChild } from "./server/auto-report.js";
 import { doorGrantMessage, doorUrlForMain, envDoorUrlForMain, GrantLedger, readMainDoorState, shouldGrant } from "./server/grant.js";
 import { GrantStore, pluginDataDir, writeDoorState } from "./server/door-state.js";
+import { remindedPath, loadReminded, saveReminded } from "./server/reminded-store.js";
 import { adoptFromRecord } from "./server/adopt.js";
 
 /** Absolute maximum depth (spec section 6): main=0 → child=1 → grandchild=2. */
@@ -110,34 +116,73 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     }
   })();
 
-  // ── Idle-archive auto-archive (#224, retired the #141 REMIND design) ──────
-  // Evidence 2026-09-22: codex/claude parents have no paseo CLI — the [housekeeping]
-  // reminder fired 10x at e2e-m130-codex2 and could never be complied with
-  // (nag loop + 11 children stuck unarchived). The plugin now archives idle
-  // children ITSELF through the in-process paseo API: per-child decision, terminal
-  // + quiet >= N minutes + no active attention marker; soft delete (a message
-  // auto-unarchives, resume-by-name survives). 0 = disabled. Track only this
-  // plugin's children — pi ext children stay with their own owner.
-  const archiveAfterMinutes = (() => {
-    const raw = Number(process.env.PASEO_SUBAGENTS_ARCHIVE_AFTER_MINUTES ?? process.env.PASEO_SUBAGENTS_ARCHIVE_REMIND_MINUTES);
-    return Number.isFinite(raw) && raw >= 0 ? Math.min(Math.round(raw), 1440) : DEFAULT_REMIND_MINUTES;
+  // ── Idle-archive, two tiers (user-approved 2026-09-22, task #230) ────────
+  // Tier 1 (remind): ONE [housekeeping] message per settled child after
+  // remindAfterMinutes idle, guiding the parent to decide via the
+  // archive_subagent TOOL (works for every provider — the old CLI guidance was
+  // #141's bug: codex/claude parents have no paseo CLI). The reminded set
+  // persists on disk, so restarts cannot re-nag. Tier 2 (force): the plugin
+  // archives children still unarchived after archiveAfterDays — soft delete,
+  // the daemon auto-unarchives when a message arrives. Both knobs come from
+  // settings.json (file > env > default); 0 disables the tier.
+  const remindAfterMinutes = (() => {
+    const raw = Number(settings.remindAfterMinutes);
+    return Number.isFinite(raw) && raw >= 0 ? Math.min(Math.round(raw), 10_080) : DEFAULT_REMIND_AFTER_MINUTES;
   })();
+  const archiveAfterDays = (() => {
+    const fromFile = Number(settings.archiveAfterDays);
+    if (Number.isFinite(fromFile) && fromFile >= 0) return Math.min(Math.round(fromFile), MAX_ARCHIVE_AFTER_DAYS);
+    const envMinutes = Number(process.env.PASEO_SUBAGENTS_ARCHIVE_AFTER_MINUTES);
+    if (Number.isFinite(envMinutes) && envMinutes >= 0) return Math.min(Math.round(envMinutes) / 1440, MAX_ARCHIVE_AFTER_DAYS);
+    return DEFAULT_ARCHIVE_AFTER_DAYS;
+  })();
+  const archiveAfterMs = archiveAfterDays * 24 * 60 * 60_000;
   const agentsRoot = join(homedir(), ".paseo", "agents");
+  const remindedFile = remindedPath(pluginDataDir());
+  const reminded = loadReminded(remindedFile);
 
   const scanIdleArchive = async (): Promise<void> => {
     const api = paseoApi;
     if (!api) return; // No lifecycle context yet — wait for the next scan.
-    if (archiveAfterMinutes <= 0) return;
     try {
-      const targets = selectAutoArchivable(readAgentRecords(agentsRoot), Date.now(), archiveAfterMinutes);
-      for (const t of targets) {
-        try {
-          await api.agents.ref(t.id).archive();
-          console.log(
-            `[paseo-subagents] auto-archive: '${t.title ?? "untitled"}' (${t.id.slice(0, 8)}, idle ${t.idleMinutes}m, parent ${t.parentId.slice(0, 8)}) — soft delete, a message auto-unarchives`,
-          );
-        } catch (err) {
-          console.log(`[paseo-subagents] auto-archive failed (${t.id.slice(0, 8)}): ${err instanceof Error ? err.message : String(err)}`);
+      const nowMs = Date.now();
+      const records = readAgentRecords(agentsRoot);
+      // Tier 1: remind once per child, grouped into one message per parent.
+      if (remindAfterMinutes > 0) {
+        const fresh = selectRemindable(records, nowMs, remindAfterMinutes, new Set(reminded.keys())).map((c) => {
+            reminded.set(c.id, nowMs); // Mark BEFORE the await — a crash mid-scan must not re-nag.
+            return c;
+          });
+        if (fresh.length > 0) {
+          saveReminded(remindedFile, reminded, nowMs);
+          const byParent = new Map<string, RemindableChild[]>();
+          for (const c of fresh) {
+            const bucket = byParent.get(c.parentId) ?? [];
+            bucket.push(c);
+            byParent.set(c.parentId, bucket);
+          }
+          for (const [parentId, children] of byParent) {
+            try {
+              await api.agents.ref(parentId).send(formatHousekeeping(children, remindAfterMinutes, archiveAfterDays));
+              console.log(`[paseo-subagents] housekeeping: reminded parent ${parentId.slice(0, 8)} about ${children.length} settled child(ren) (once per child)`);
+            } catch (err) {
+              console.log(`[paseo-subagents] housekeeping deliver failed (${parentId.slice(0, 8)}): ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
+        }
+      }
+      // Tier 2: force-archive the long-idle leftovers.
+      if (archiveAfterDays > 0) {
+        const targets = selectAutoArchivable(records, nowMs, Math.floor(archiveAfterMs / 60_000));
+        for (const t of targets) {
+          try {
+            await api.agents.ref(t.id).archive();
+            console.log(
+              `[paseo-subagents] force-archive: '${t.title ?? "untitled"}' (${t.id.slice(0, 8)}, idle ${t.idleMinutes}m, parent ${t.parentId.slice(0, 8)}) — soft delete, a message auto-unarchives`,
+            );
+          } catch (err) {
+            console.log(`[paseo-subagents] force-archive failed (${t.id.slice(0, 8)}): ${err instanceof Error ? err.message : String(err)}`);
+          }
         }
       }
     } catch (err) {
@@ -146,14 +191,16 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   };
 
   const idleTimer =
-    archiveAfterMinutes > 0
+    remindAfterMinutes > 0 || archiveAfterDays > 0
       ? setInterval(() => {
           void scanIdleArchive();
         }, 60_000)
       : null;
   if (idleTimer) idleTimer.unref?.();
   console.log(
-    `[paseo-subagents] idle-archive ${archiveAfterMinutes > 0 ? `auto-archive after ${archiveAfterMinutes}m (scans every 60s, soft delete)` : "disabled (0)"}`,
+    `[paseo-subagents] idle-archive tiers: remind after ${remindAfterMinutes}m (once per child, tool guidance)` +
+      ` + force after ${archiveAfterDays}d (soft delete)` +
+      `${remindAfterMinutes <= 0 && archiveAfterDays <= 0 ? " — disabled (both 0)" : ""}`,
   );
 
   // #225 auto-report backstop state: children spawned by THIS process are
@@ -400,6 +447,61 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     }
   };
 
+  // #230: list_subagents — the caller sees ONLY its own unarchived children.
+  const listChildren: ListChildrenFn = async (parentId) => {
+    try {
+      const nowMs = Date.now();
+      const rows = readAgentRecords(agentsRoot)
+        .filter((r) => !r.archivedAt && r.labels?.["subagent.parent"] === parentId && r.labels?.["subagent.spawner"] === "paseo-subagents")
+        .map((r) => {
+          const at = r.lastActivityAt ? Date.parse(r.lastActivityAt) : NaN;
+          const idle = Number.isNaN(at) ? "unknown" : `${Math.max(0, Math.floor((nowMs - at) / 60_000))}m`;
+          return `- ${r.id} · ${r.labels?.["subagent.role"] ?? "unknown-role"} · ${r.lastStatus ?? "unknown"} · idle ${idle} · ${r.title ?? "untitled"}`;
+        });
+      if (rows.length === 0) return { text: "You have no unarchived subagents from this plugin. (Archived children are hidden; messaging an archived child auto-unarchives it.)" };
+      return {
+        text: `${rows.length} unarchived subagent(s):\n${rows.join("\n")}\nTo archive any of them call archive_subagent with their agentIds (soft delete).`,
+      };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  };
+
+  // #230: archive_subagent — the model decides; the plugin only guards ownership
+  // (subagent.parent label must equal the caller) and executes the soft delete.
+  const archiveChildren: ArchiveChildrenFn = async (parentId, agentIds) => {
+    const api = paseoApi;
+    if (!api) return { error: "paseo API not captured yet — daemon lifecycle context missing" };
+    const records = readAgentRecords(agentsRoot);
+    const byId = new Map(records.map((r) => [r.id, r]));
+    const lines: string[] = [];
+    let anyOk = false;
+    for (const raw of agentIds) {
+      const id = raw.includes("-") ? raw : (records.find((r) => r.id.startsWith(raw))?.id ?? raw);
+      const rec = byId.get(id);
+      if (!rec) {
+        lines.push(`${raw}: not-found`);
+        continue;
+      }
+      if (rec.labels?.["subagent.parent"] !== parentId) {
+        lines.push(`${id.slice(0, 8)}: refused (not your subagent)`);
+        continue;
+      }
+      if (rec.archivedAt) {
+        lines.push(`${id.slice(0, 8)}: already-archived`);
+        continue;
+      }
+      try {
+        await api.agents.ref(id).archive();
+        anyOk = true;
+        lines.push(`${id.slice(0, 8)}: archived (soft delete — a message auto-unarchives)`);
+      } catch (err) {
+        lines.push(`${id.slice(0, 8)}: error (${err instanceof Error ? err.message : String(err)})`);
+      }
+    }
+    return { text: `archive_subagent: ${anyOk ? "done" : "nothing archived"}\n${lines.join("\n")}` };
+  };
+
   let replyServer: ReplyServerHandle | null = null;
   listenReplyServer({
     registry,
@@ -423,6 +525,8 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     spawnPool: spawnPoolFn,
     ask: askFn,
     answer: answerFn,
+    list: listChildren,
+    archive: archiveChildren,
   })
     .then((handle) => {
       replyServer = handle;

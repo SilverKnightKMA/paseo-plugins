@@ -167,7 +167,97 @@ test("tools/list: canSpawn=false sees only reply_to_parent; main also sees spawn
     const childList = (await post(handle.port, childToken, { jsonrpc: "2.0", id: 1, method: "tools/list" })).result!.tools!;
     expect(childList.map((t) => t.name).sort()).toEqual(["ask_parent", "reply_to_parent"]);
     const mainList = (await post(handle.port, mainToken, { jsonrpc: "2.0", id: 2, method: "tools/list" })).result!.tools!;
-    expect(mainList.map((t) => t.name).sort()).toEqual(["answer_child", "reply_to_parent", "spawn_pool", "spawn_subagent"]);
+    expect(mainList.map((t) => t.name).sort()).toEqual([
+      "answer_child",
+      "archive_subagent",
+      "list_subagents",
+      "reply_to_parent",
+      "spawn_pool",
+      "spawn_subagent",
+    ]);
+  } finally {
+    await handle.close();
+  }
+});
+
+// ---- #230: list_subagents + archive_subagent (model-decided archive) ----
+
+test("#230 list_subagents: parent receives its own unarchived children; child (canSpawn=false) refused", async () => {
+  const registry = new TokenRegistry();
+  const mainToken = registry.mint("parent-99", "main", { depth: 0, canSpawn: true });
+  const childToken = registry.mint("parent-99", "child", { depth: 1, canSpawn: false });
+  const seen: string[] = [];
+  const handle = await listenReplyServer({
+    registry,
+    deliver: async () => {},
+    list: async (parentId) => {
+      seen.push(parentId);
+      return { text: "2 unarchived subagent(s):\n- aaaa1111 · scout · idle · idle 42m · s1\n- bbbb2222 · worker · idle · idle 7m · s2" };
+    },
+  });
+  try {
+    const ok = await post(handle.port, mainToken, {
+      jsonrpc: "2.0", id: 1, method: "tools/call",
+      params: { name: "list_subagents", arguments: {} },
+    });
+    expect(ok.result!.isError).toBe(false);
+    expect(ok.result!.content![0].text).toContain("aaaa1111 · scout");
+    expect(seen).toEqual(["parent-99"]);
+    const denied = await post(handle.port, childToken, {
+      jsonrpc: "2.0", id: 2, method: "tools/call",
+      params: { name: "list_subagents", arguments: {} },
+    });
+    expect(denied.error?.message).toContain("canSpawn=false");
+  } finally {
+    await handle.close();
+  }
+});
+
+test("#230 archive_subagent: passes agentIds + caller parentId through; validates shape", async () => {
+  const registry = new TokenRegistry();
+  const mainToken = registry.mint("parent-77", "main", { depth: 0, canSpawn: true });
+  const calls: Array<{ parentId: string; ids: string[] }> = [];
+  const handle = await listenReplyServer({
+    registry,
+    deliver: async () => {},
+    archive: async (parentId, ids) => {
+      calls.push({ parentId, ids });
+      return { text: "archive_subagent: done\naaaa1111: archived (soft delete — a message auto-unarchives)" };
+    },
+  });
+  try {
+    const ok = await post(handle.port, mainToken, {
+      jsonrpc: "2.0", id: 1, method: "tools/call",
+      params: { name: "archive_subagent", arguments: { agentIds: ["aaaa1111-0000", "bbbb2222"] } },
+    });
+    expect(ok.result!.isError).toBe(false);
+    expect(ok.result!.content![0].text).toContain("soft delete");
+    expect(calls).toEqual([{ parentId: "parent-77", ids: ["aaaa1111-0000", "bbbb2222"] }]);
+    const bad = await post(handle.port, mainToken, {
+      jsonrpc: "2.0", id: 2, method: "tools/call",
+      params: { name: "archive_subagent", arguments: { agentIds: [] } },
+    });
+    expect(bad.error?.message).toContain("1-50 non-empty strings");
+    const notIds = await post(handle.port, mainToken, {
+      jsonrpc: "2.0", id: 3, method: "tools/call",
+      params: { name: "archive_subagent", arguments: { agentIds: [42] } },
+    });
+    expect(notIds.error?.message).toContain("1-50 non-empty strings");
+  } finally {
+    await handle.close();
+  }
+});
+
+test("#230 archive_subagent: door without the callback reports tool not enabled", async () => {
+  const registry = new TokenRegistry();
+  const mainToken = registry.mint("p", "main", { depth: 0, canSpawn: true });
+  const handle = await listenReplyServer({ registry, deliver: async () => {} });
+  try {
+    const r = await post(handle.port, mainToken, {
+      jsonrpc: "2.0", id: 1, method: "tools/call",
+      params: { name: "archive_subagent", arguments: { agentIds: ["x"] } },
+    });
+    expect(r.error?.message).toContain("not enabled");
   } finally {
     await handle.close();
   }
