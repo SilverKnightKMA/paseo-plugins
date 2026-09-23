@@ -24,7 +24,7 @@ import { TokenRegistry } from "./server/tokens.js";
 import { listenReplyServer, DOOR_PORT_RANGE, type ReplyServerHandle, type SpawnFn, type SpawnPoolFn, type CallerCaps, type SpawnArgs, type AskFn, type AnswerFn, type ListChildrenFn, type ArchiveChildrenFn } from "./server/mcp-server.js";
 import { registerSubagentReplyHook, registerEnvDoorHook, PARENT_ENV, MAIN_MCP_KEY } from "./server/hooks.js";
 import { canAnswer, makeQuestionId, type PendingQuestion } from "./server/ask.js";
-import { makeBackstop, type BackstopSlice } from "./server/backstop.js";
+import { armBackstop, type BackstopHandle } from "./server/backstop.js";
 import { composeInitialPrompt, resolveRole, doorToolPolicy, type PluginSettings } from "./server/roles.js";
 import {
   aggregatePoolReport,
@@ -105,11 +105,13 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   // fires at turn_ended — the whole turn would be dead for spawns. The direct
   // backstop client (daemon loopback, no auth) answers immediately; captured
   // lifecycle api stays preferred whenever it exists.
-  let backstopClient: BackstopSlice | null = null;
-  const getApi = (): PaseoSendSlice | null => {
+  let backstop: BackstopHandle | null = null;
+  const getApi = async (): Promise<PaseoSendSlice | null> => {
     if (paseoApi) return paseoApi;
-    backstopClient ??= makeBackstop();
-    return (backstopClient as PaseoSendSlice | null) ?? null;
+    backstop ??= armBackstop();
+    if (!backstop) return null;
+    const ok = (await backstop.ready) || backstop.isConnected();
+    return ok ? (backstop.client as PaseoSendSlice) : null;
   };
 
   // Repo wins (spec v6): settings.json in the plugin repo is the source of truth,
@@ -155,7 +157,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   const reminded = loadReminded(remindedFile);
 
   const scanIdleArchive = async (): Promise<void> => {
-    const api = getApi();  // #277 lifecycle-captured api, else direct backstop
+    const api = await getApi();  // #277 lifecycle-captured api, else direct backstop
     if (!api) return; // No lifecycle context yet — wait for the next scan.
     try {
       const nowMs = Date.now();
@@ -227,7 +229,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     args: SpawnArgs,
     extraLabels?: Record<string, string>,
   ): Promise<{ agentId: string } | { error: string }> => {
-    const api = getApi();  // #277 lifecycle-captured api, else direct backstop
+    const api = await getApi();  // #277 lifecycle-captured api, else direct backstop
     if (!api) return { error: "paseo API not captured yet — daemon lifecycle context missing" };
     if (caller.depth >= MAX_DEPTH) {
       return { error: `depth cap: caller depth=${caller.depth}, max=${MAX_DEPTH} (spec section 6 — limits recursion)` };
@@ -341,7 +343,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   // (idle/error/archived), send ONE aggregate [pool-report] and forget the pool.
   // Pool older than 2h → partial flush.
   const scanPools = async (): Promise<void> => {
-    const api = getApi();  // #277 lifecycle-captured api, else direct backstop
+    const api = await getApi();  // #277 lifecycle-captured api, else direct backstop
     if (!api || pools.size === 0) return;
     let records: ReturnType<typeof readAgentRecords>;
     try {
@@ -380,7 +382,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   // a reply arriving mid-scan must not double-send), then capture the child's
   // last assistant text from its timeline and deliver the [child-report].
   const scanAutoReport = async (): Promise<void> => {
-    const api = getApi();  // #277 lifecycle-captured api, else direct backstop
+    const api = await getApi();  // #277 lifecycle-captured api, else direct backstop
     if (!api || watched.size === 0) return;
     let records: ReturnType<typeof readAgentRecords>;
     try {
@@ -430,7 +432,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   // Restarting loses pending questions (the child can ask again — fail-honest).
   const pendingQuestions = new Map<string, PendingQuestion>();
   const askFn: AskFn = async (caller, parentId, question) => {
-    const api = getApi();  // #277 lifecycle-captured api, else direct backstop
+    const api = await getApi();  // #277 lifecycle-captured api, else direct backstop
     if (!api) return { error: "paseo API not captured yet — retry later" };
     const childId = caller.boundAgentId;
     if (!childId) return { error: "door token has not been bound to agentId — retry shortly" };
@@ -447,7 +449,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     }
   };
   const answerFn: AnswerFn = async (caller, questionId, answer) => {
-    const api = getApi();  // #277 lifecycle-captured api, else direct backstop
+    const api = await getApi();  // #277 lifecycle-captured api, else direct backstop
     if (!api) return { error: "paseo API not captured yet" };
     const pending = pendingQuestions.get(questionId);
     if (!pending) return { error: `questionId '${questionId}' does not exist (already answered or plugin restarted) — the child will ask again if needed` };
@@ -485,7 +487,7 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   // #230/#234: archive_subagent (ownership guard: either parent label) — the model decides; the plugin only guards ownership
   // (subagent.parent label must equal the caller) and executes the soft delete.
   const archiveChildren: ArchiveChildrenFn = async (parentId, agentIds) => {
-    const api = getApi();  // #277 lifecycle-captured api, else direct backstop
+    const api = await getApi();  // #277 lifecycle-captured api, else direct backstop
     if (!api) return { error: "paseo API not captured yet — daemon lifecycle context missing" };
     const records = readAgentRecords(agentsRoot);
     const byId = new Map(records.map((r) => [r.id, r]));
@@ -524,8 +526,8 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
     // containing the exact token and register it in RAM again. The
     // PASEO_SUBAGENTS_ADOPT=0 hatch disables this path (401 as in v1.0.69).
     adopt: (token) => adoptFromRecord(agentsRoot, token, registry) !== null,
-    deliver: (parentId, title, prompt, meta) => {
-      const api = getApi();  // #277 lifecycle-captured api, else direct backstop
+    deliver: async (parentId, title, prompt, meta) => {
+      const api = await getApi();  // #277 lifecycle-captured api, else direct backstop
       if (!api) return Promise.reject(new Error("paseo API not captured yet — daemon lifecycle context missing"));
       // #225: a successful (in-flight) tool delivery counts as reported — the
       // auto-report backstop must not double-ping children that used the door.
