@@ -3,11 +3,11 @@ import { deriveLocalUrl, armBackstop } from "./backstop.js";
 
 describe("#277 direct backstop client (post-reload self-heal)", () => {
 	test("deriveLocalUrl: default, env listen, 0.0.0.0 mapped to loopback, empty", () => {
-		expect(deriveLocalUrl(undefined)).toBe("http://127.0.0.1:6767");
-		expect(deriveLocalUrl("127.0.0.1:6767")).toBe("http://127.0.0.1:6767");
-		expect(deriveLocalUrl("0.0.0.0:6767")).toBe("http://127.0.0.1:6767");
-		expect(deriveLocalUrl("")).toBe("http://127.0.0.1:6767");
-		expect(deriveLocalUrl("192.168.1.5:7000")).toBe("http://192.168.1.5:7000");
+		expect(deriveLocalUrl(undefined)).toBe("ws://127.0.0.1:6767/ws");
+		expect(deriveLocalUrl("127.0.0.1:6767")).toBe("ws://127.0.0.1:6767/ws");
+		expect(deriveLocalUrl("0.0.0.0:6767")).toBe("ws://127.0.0.1:6767/ws");
+		expect(deriveLocalUrl("")).toBe("ws://127.0.0.1:6767/ws");
+		expect(deriveLocalUrl("192.168.1.5:7000")).toBe("ws://192.168.1.5:7000/ws");
 	});
 
 	test("armBackstop: refused port → ready resolves false within the arm timeout, isConnected stays live", async () => {

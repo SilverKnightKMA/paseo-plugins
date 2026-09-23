@@ -31,11 +31,17 @@ export interface BackstopHandle {
 	isConnected(): boolean;
 }
 
-/** Map a PASEO_LISTEN-style host:port onto a loopback http URL (0.0.0.0 is not dialable). */
+/**
+ * Map a PASEO_LISTEN-style host:port onto the daemon's WebSocket endpoint.
+ * The client README is explicit: "Use a WebSocket URL ending in /ws, such as
+ * ws://127.0.0.1:6767/ws" — a plain http://host:port never completes the
+ * upgrade and connect() hangs silently (found live, #277). 0.0.0.0 is mapped
+ * to loopback (not dialable as a client target).
+ */
 export function deriveLocalUrl(listen: string | undefined): string {
 	const raw = (listen ?? "127.0.0.1:6767").trim() || "127.0.0.1:6767";
 	const hostPort = raw.replace(/^0\.0\.0\.0/, "127.0.0.1").replace(/^::$/, "127.0.0.1");
-	return `http://${hostPort}`;
+	return `ws://${hostPort}/ws`;
 }
 
 /**
