@@ -30,7 +30,7 @@ One command performs initial setup, starts the daemon, and prints pairing instru
 paseo status
 ```
 
-## 3. Install seven plugins from this repo
+## 3. Install eight plugins from this repo
 
 ```bash
 paseo plugin add SilverKnightKMA/paseo-plugins:agent-health --ref v1.0.57
@@ -39,6 +39,7 @@ paseo plugin add SilverKnightKMA/paseo-plugins:om-status --ref v1.0.57
 paseo plugin add SilverKnightKMA/paseo-plugins:plan --ref v1.0.57
 paseo plugin add SilverKnightKMA/paseo-plugins:snip --ref v1.0.57
 paseo plugin add SilverKnightKMA/paseo-plugins:task --ref v1.0.57
+paseo plugin add SilverKnightKMA/paseo-plugins:task-decisions --ref v1.0.57
 paseo plugin add SilverKnightKMA/paseo-plugins:lessons --ref v1.0.57
 ```
 
@@ -64,7 +65,7 @@ FILL-IN table:
 ## 5. Verify
 
 ```bash
-paseo plugin ls          # 7 plugins: agent-health, om-panel, om-status, plan, snip, task, lessons — status running
+paseo plugin ls          # 8 plugins: agent-health, om-panel, om-status, plan, snip, task, task-decisions, lessons — status running
 paseo status             # daemon running, config.json loads cleanly
 ```
 
@@ -72,7 +73,7 @@ Open a workspace in the Paseo app (app.paseo.sh): the **Tasks**, **Plans**, **OM
 
 ## 6. FINAL STEP — give the user a join link
 
-The system is ready when: `pi -p` replies OK (SETUP-PI step 5) + `paseo plugin ls` shows all seven running + `paseo status` is running. Then print pairing information for the user:
+The system is ready when: `pi -p` replies OK (SETUP-PI step 5) + `paseo plugin ls` shows all eight running + `paseo status` is running. Then print pairing information for the user:
 
 ```bash
 paseo daemon pair
