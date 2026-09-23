@@ -57,14 +57,14 @@ export const PROVIDER_CATALOGS: Record<string, {
 		defaultProviderEntry: "pi/cli-openai", // Plugin maps the short name to the actual entry.
 	},
 	codex: {
-		configs: ["auto", "review", "full"],
+		configs: ["auto", "review", "full", "read-only"], // #273 matrix: read-only = hidden preset in daemon MODE_PRESETS
 		defaultProviderEntry: "codex",
-		modeMap: { auto: "auto", review: "auto-review", full: "full-access" },
+		modeMap: { auto: "auto", review: "auto-review", full: "full-access", "read-only": "read-only" },
 	},
 	claude: {
-		configs: ["plan", "acceptEdits", "bypassPermissions"],
+		configs: ["plan", "default", "acceptEdits", "auto", "bypassPermissions"], // #273 matrix: full daemon DEFAULT_MODES (5) — was 3 best-effort
 		defaultProviderEntry: "claude",
-		modeMap: { plan: "plan", acceptEdits: "acceptEdits", bypassPermissions: "bypassPermissions" },
+		modeMap: { plan: "plan", default: "default", acceptEdits: "acceptEdits", auto: "auto", bypassPermissions: "bypassPermissions" },
 		// G4 live: Claude's default HTTP MCP tool call is ~45s — raise the limit for spawn/pool/ask.
 		env: { MCP_TOOL_TIMEOUT: "300000" },
 	},

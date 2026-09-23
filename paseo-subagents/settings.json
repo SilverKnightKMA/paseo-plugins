@@ -33,7 +33,7 @@
     },
     "claude-worker": {
       "provider": "claude",
-      "config": "acceptEdits",
+      "config": "default",
       "model": "fci/deepseek-v4-flash",
       "thinking": "medium"
     },

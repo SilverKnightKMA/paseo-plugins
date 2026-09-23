@@ -88,8 +88,8 @@ describe("PROVIDER_CATALOGS", () => {
 	test("the pi catalog contains all pi ext roles", () => {
 		expect(PROVIDER_CATALOGS.pi.configs).toContain("mermaid-maker");
 	});
-	test("Claude has 3 permission levels", () => {
-		expect(PROVIDER_CATALOGS.claude.configs).toEqual(["plan", "acceptEdits", "bypassPermissions"]);
+	test("Claude has 5 permission levels (#273 matrix — full daemon DEFAULT_MODES)", () => {
+		expect(PROVIDER_CATALOGS.claude.configs).toEqual(["plan", "default", "acceptEdits", "auto", "bypassPermissions"]);
 	});
 });
 
@@ -112,8 +112,13 @@ describe("modeMap config -> modeId", () => {
 		const p = resolveRole("scout", {});
 		expect(p.ok && p.role.modeId).toBeUndefined();
 	});
-	test("an unknown config in the new Codex catalog -> fail-closed", () => {
+	test("codex read-only maps to the hidden read-only preset (#273 matrix)", () => {
 		const r = resolveRole("worker", { roles: { worker: { provider: "codex", config: "read-only", model: "m" } } });
+		expect(r.ok).toBe(true);
+		if (r.ok) expect(r.role.modeId).toBe("read-only");
+	});
+	test("an unknown config in the Codex catalog -> fail-closed", () => {
+		const r = resolveRole("worker", { roles: { worker: { provider: "codex", config: "yolo", model: "m" } } });
 		expect(r.ok).toBe(false);
 	});
 });
