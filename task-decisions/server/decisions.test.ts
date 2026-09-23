@@ -102,4 +102,70 @@ describe("#258 task-decisions — artifact parsing + button mapping + poke paylo
 			rmSync(home, { recursive: true, force: true });
 		}
 	});
+
+	test("#268 regression: workspaceId-null agent matched via cwd===projectRootPath fallback", async () => {
+		const home = mkdtempSync(join(tmpdir(), "task-dec-"));
+		const prevHome = process.env.HOME;
+		process.env.HOME = home;
+		const { readDecisions } = await import("./decisions.js");
+		try {
+			const dir = join(home, ".pi", "agent", "task-status");
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(
+				join(dir, "sess-b.decisions.json"),
+				JSON.stringify([{ id: "d-9", taskId: 7, kind: "cancel-proposal", reason: "r", createdAt: "2026-09-23T05:00:00Z", decidedAt: null, decision: null }]),
+			);
+			writeFileSync(join(dir, "sess-b.json"), JSON.stringify({ tasks: [{ id: 7, subject: "seven", status: "proposed_cancel" }] }));
+			const context = {
+				paseo: {
+					agents: {
+						list: async () => ({ entries: [{ agent: { id: "a1", workspaceId: null, cwd: "/tmp/root-x", title: "main chat", runtimeInfo: { sessionId: "sess-b" } } }] }),
+					},
+					workspaces: { list: async () => ({ entries: [{ id: "ws-9", projectRootPath: "/tmp/root-x" }] }) },
+				},
+			};
+			const out = await readDecisions({ workspaceId: "ws-9", includeDecided: false }, context as never);
+			expect(out.sessions.length).toBe(1); // cwd fallback matched the workspaceId-null agent
+			expect(out.sessions[0]!.entries[0]!.id).toBe("d-9");
+		} finally {
+			if (prevHome !== undefined) process.env.HOME = prevHome;
+			rmSync(home, { recursive: true, force: true });
+		}
+	});
+
+	test("#268 regression: hidden agents (archived / internal / subagent-labeled) never show cards", async () => {
+		const home = mkdtempSync(join(tmpdir(), "task-dec-"));
+		const prevHome = process.env.HOME;
+		process.env.HOME = home;
+		const { readDecisions } = await import("./decisions.js");
+		try {
+			const dir = join(home, ".pi", "agent", "task-status");
+			mkdirSync(dir, { recursive: true });
+			for (const sid of ["s-arc", "s-int", "s-sub"]) {
+				writeFileSync(
+					join(dir, `${sid}.decisions.json`),
+					JSON.stringify([{ id: "d-1", taskId: 1, kind: "amend", reason: "r", createdAt: "2026-09-23T05:00:00Z", decidedAt: null, decision: null }]),
+				);
+			}
+			const mk = (sid: string, extra: Record<string, unknown>) => ({ agent: { id: sid, workspaceId: "ws-1", runtimeInfo: { sessionId: sid }, ...extra } });
+			const context = {
+				paseo: {
+					agents: {
+						list: async () => ({
+							entries: [
+								mk("s-arc", { archivedAt: "2026-09-23T00:00:00Z" }),
+								mk("s-int", { internal: true }),
+								mk("s-sub", { labels: { "subagent.role": "scout" } }),
+							],
+						}),
+					},
+				},
+			};
+			const out = await readDecisions({ workspaceId: "ws-1", includeDecided: false }, context as never);
+			expect(out.sessions.length).toBe(0);
+		} finally {
+			if (prevHome !== undefined) process.env.HOME = prevHome;
+			rmSync(home, { recursive: true, force: true });
+		}
+	});
 });

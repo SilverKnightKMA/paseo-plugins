@@ -7,7 +7,7 @@ import { GetDecisionsRpc, PokeControlRpc, type SessionDecisions } from "../share
 import { pokeEngineBridges } from "./doorbell-poke.js";
 
 /** Wire entries are wrappers: { agent: <snapshot> }. Unwrap defensively. */
-function unwrapAgents(entries: unknown[]): { id?: string; workspaceId?: string | null; title?: string | null; runtimeInfo?: { sessionId?: string | null } | null }[] {
+function unwrapAgents(entries: unknown[]): { id?: string; workspaceId?: string | null; cwd?: string | null; title?: string | null; archivedAt?: string | null; internal?: boolean | null; labels?: Record<string, unknown> | null; runtimeInfo?: { sessionId?: string | null } | null }[] {
   const out: typeof unwrapAgents extends (...a: never[]) => infer R ? R : never[] = [];
   for (const e of entries) {
     const inner = (e as { agent?: unknown }).agent;
@@ -79,7 +79,27 @@ export async function readDecisions(
     } catch {
       agents = [];
     }
-    const inWs = agents.filter((a) => a.workspaceId === input.workspaceId && a.runtimeInfo?.sessionId);
+    // #268: real agents.list() entries carry workspaceId=null — resolve the
+    // workspace rootDir via workspaces.list() and fall back to cwd matching
+    // (same pattern as task/server/task-state.ts). Also skip hidden agents
+    // (archived / internal / subagent-labeled) so stale cards never render.
+    let rootDir: string | null = null;
+    try {
+      const ws = await context.paseo.workspaces.list();
+      const hit = ws.entries.find((w) => w.id === input.workspaceId);
+      rootDir = hit?.projectRootPath ?? null;
+    } catch {
+      // workspaces unavailable — cwd fallback disabled
+    }
+    const isHidden = (a: ReturnType<typeof unwrapAgents>[number]): boolean =>
+      a.archivedAt != null ||
+      a.internal === true ||
+      Boolean(a.labels && (a.labels["subagent.role"] ?? a.labels["subagent.parent"] ?? a.labels["paseo.parent-agent-id"]));
+    const inWsAgent = (a: ReturnType<typeof unwrapAgents>[number]): boolean => {
+      if (a.workspaceId) return a.workspaceId === input.workspaceId;
+      return rootDir != null && a.cwd != null && a.cwd === rootDir;
+    };
+    const inWs = agents.filter((a) => inWsAgent(a) && !isHidden(a) && a.runtimeInfo?.sessionId);
     const sessions: SessionDecisions[] = [];
     for (const a of inWs) {
       const sessionId = a.runtimeInfo!.sessionId as string;
