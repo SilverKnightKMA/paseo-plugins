@@ -3,7 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
-import { GetOmStatusRpc, OmEventSchema, OmSummarySchema, type OmStatusState } from "../shared/rpc.js";
+import { GetOmStatusRpc, GetOmTopicsRpc, OmEventSchema, OmSummarySchema, type OmStatusState, type OmTopicsState } from "../shared/rpc.js";
 import { mergeLiveTitles, titleFor } from "./titles.js";
 import { isHiddenSession, visibleOm, type FilterAgentLike } from "./session-filter.js";
 
@@ -192,5 +192,78 @@ export async function readOmStatus(
     };
   } catch {
     return empty;
+  }
+}
+
+// ── #244 (M3, v1.0.94): OM Topics — read-only topic listing per session ──
+
+/** Pure-fs core (testable): list topic files under a session dir,
+ *  *.md minus INDEX.md, newest-first, with head observation lines. */
+export async function readTopicsForDir(
+  sessionDir: string,
+  cap = 50,
+): Promise<{ name: string; sizeBytes: number; updatedAt: string; head: string[] }[]> {
+  const out: { name: string; sizeBytes: number; updatedAt: string; head: string[] }[] = [];
+  let names: string[];
+  try {
+    const dirents = await readdir(sessionDir, { withFileTypes: true });
+    names = dirents.filter((f) => f.isFile() && f.name.endsWith(".md") && f.name !== "INDEX.md").map((f) => f.name);
+  } catch {
+    return [];
+  }
+  const stamped: { name: string; mtimeMs: number }[] = [];
+  for (const name of names) {
+    try {
+      stamped.push({ name, mtimeMs: (await stat(path.join(sessionDir, name))).mtimeMs });
+    } catch {
+      // vanished mid-list — skip
+    }
+  }
+  stamped.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  for (const f of stamped.slice(0, cap)) {
+    const full = path.join(sessionDir, f.name);
+    let sizeBytes = 0;
+    let head: string[] = [];
+    try {
+      const info = await stat(full);
+      sizeBytes = info.size;
+      const text = await readFile(full, "utf8");
+      head = text
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0 && !l.startsWith("#"))
+        .slice(0, 5)
+        .map((l) => (l.length > 200 ? `${l.slice(0, 200)}…` : l));
+    } catch {
+      head = [];
+    }
+    out.push({ name: f.name, sizeBytes, updatedAt: new Date(f.mtimeMs).toISOString(), head });
+  }
+  return out;
+}
+
+/** RPC wrapper: resolve the workspace directory the same way readOmStatus does. */
+export async function readOmTopics(
+  input: RpcInput<typeof GetOmTopicsRpc>,
+  context: PluginHandlerContext,
+): Promise<OmTopicsState> {
+  try {
+    const handle = context.paseo.workspaces.ref(input.workspaceId);
+    let ws = handle.current();
+    if (!ws?.workspaceDirectory) ws = await handle.refresh();
+    const directory = ws?.workspaceDirectory ?? null;
+    if (!directory) return { present: false, sessionId: input.sessionId, topics: [], note: "workspace directory not resolved" };
+    const topics = await readTopicsForDir(path.join(directory, ".memory", input.sessionId));
+    if (topics.length === 0) {
+      return {
+        present: false,
+        sessionId: input.sessionId,
+        topics: [],
+        note: `no topic files under .memory/${input.sessionId.slice(0, 8)} — OM off or nothing consolidated yet`,
+      };
+    }
+    return { present: true, sessionId: input.sessionId, topics, note: null };
+  } catch {
+    return { present: false, sessionId: input.sessionId, topics: [], note: null };
   }
 }

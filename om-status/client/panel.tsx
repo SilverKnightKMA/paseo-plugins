@@ -1,8 +1,8 @@
 import React, { useCallback, useState } from "react";
-import { Text, View, ScrollView } from "react-native";
+import { Text, View, ScrollView, Pressable } from "react-native";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import { useRpc } from "@getpaseo/plugin/client";
-import { GetOmStatusRpc } from "../shared/rpc.js";
+import { GetOmStatusRpc, GetOmTopicsRpc, type OmTopic } from "../shared/rpc.js";
 import { OmCard, OmHeader, OmSection, OmSessionPicker, omChipLabel, omViaSuffix, type OmColors } from "./ui.js";
 import { useLiveRpc } from "./use-live.js";
 
@@ -17,10 +17,97 @@ function OmKV({ c, label, value }: { c: OmColors; label: string; value: string }
   );
 }
 
+/** #244 (M3): one topic row — name · size · updated, expandable head lines. */
+function OmTopicRow({ c, topic }: { c: OmColors; topic: OmTopic }) {
+  const [open, setOpen] = useState(false);
+  const kb = topic.sizeBytes >= 1024 ? `${(topic.sizeBytes / 1024).toFixed(1)}K` : `${topic.sizeBytes}B`;
+  const updated = topic.updatedAt.slice(0, 16).replace("T", " ");
+  return (
+    <View style={{ marginBottom: 4 }}>
+      <Pressable onPress={() => setOpen(!open)} style={{ flexDirection: "row" as const, gap: 6 }}>
+        <Text style={{ color: c.foreground, fontSize: 11, fontFamily: "monospace", flexShrink: 1 }}>
+          {open ? "▾" : "▸"} {topic.name}
+        </Text>
+        <Text style={{ color: c.foregroundMuted, fontSize: 11, fontFamily: "monospace" }}>
+          {kb} · {updated}
+        </Text>
+      </Pressable>
+      {open ? (
+        topic.head.length === 0 ? (
+          <Text style={{ color: c.foregroundMuted, fontSize: 10, fontFamily: "monospace", paddingLeft: 18 }}>(empty)</Text>
+        ) : (
+          topic.head.map((h, i) => (
+            <Text key={i} style={{ color: c.foregroundMuted, fontSize: 10, fontFamily: "monospace", paddingLeft: 18 }}>
+              {h}
+            </Text>
+          ))
+        )
+      ) : null}
+    </View>
+  );
+}
+
+/** #244 (M3): the Topics view — on-demand GetOmTopicsRpc (never in the live poll). */
+export function TopicsView({ c, workspaceId, sessionId }: { c: OmColors; workspaceId: string; sessionId: string | null }) {
+  const read = useRpc(GetOmTopicsRpc);
+  const [topics, setTopics] = useState<OmTopic[] | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const refresh = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const next = await read({ workspaceId, sessionId });
+      setTopics(next.topics);
+      setNote(next.note ?? null);
+    } catch {
+      // keep last; user can re-open
+    }
+  }, [read, sessionId, workspaceId]);
+  React.useEffect(() => {
+    void refresh();
+  }, [refresh]);
+  return (
+    <OmCard c={c} noRail>
+      <OmSection c={c}>Topic files ({topics ? topics.length : "…"})</OmSection>
+      {topics == null ? (
+        <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>loading…</Text>
+      ) : topics.length === 0 ? (
+        <Text style={{ color: c.foregroundMuted, fontSize: 11 }}>{note ?? "no topic files"}</Text>
+      ) : (
+        topics.map((t) => <OmTopicRow key={t.name} c={c} topic={t} />)
+      )}
+    </OmCard>
+  );
+}
+
+/** #244 (M3): standalone Topics panel — the composer pill's direct target.
+ *  Resolves the session via the status RPC (agentId > workspace-active),
+ *  then renders the on-demand TopicsView. */
+export function OmTopicsPanel(props: PluginWorkspacePanelProps) {
+  const read = useRpc(GetOmStatusRpc);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const refresh = useCallback(async () => {
+    try {
+      const next = await read({ workspaceId: props.workspaceId });
+      setSessionId(next.resolved?.sessionId ?? null);
+    } catch {
+      // keep last resolved; backstop retries
+    }
+  }, [props.workspaceId, read]);
+  useLiveRpc(refresh, BACKSTOP_MS);
+  const c = props.theme.colors;
+  return (
+    <ScrollView style={{ flex: 1, backgroundColor: c.surface0 }} contentContainerStyle={{ padding: 12, gap: 8 }}>
+      <TopicsView c={c} workspaceId={props.workspaceId} sessionId={sessionId} />
+    </ScrollView>
+  );
+}
+
 export function OmStatusPanel(props: PluginWorkspacePanelProps) {
   const read = useRpc(GetOmStatusRpc);
   const [data, setData] = useState<Awaited<ReturnType<typeof read>> | null>(null);
   const [picked, setPicked] = useState<string | null>(null); // chips override
+  // #244 (M3): segmented view — Status (default) | Topics
+  const [view, setView] = useState<"status" | "topics">("status");
 
   const refresh = useCallback(async () => {
     try {
@@ -38,7 +125,35 @@ export function OmStatusPanel(props: PluginWorkspacePanelProps) {
   const sessions = data?.sessions ?? [];
   return (
     <ScrollView style={{ flex: 1, backgroundColor: c.surface0 }} contentContainerStyle={{ padding: 12, gap: 8 }}>
-      {data == null ? (
+      <View style={{ flexDirection: "row" as const, gap: 6 }}>
+        {(["status", "topics"] as const).map((v) => (
+          <Pressable
+            key={v}
+            onPress={() => setView(v)}
+            style={{
+              paddingVertical: 3,
+              paddingHorizontal: 10,
+              borderRadius: 6,
+              backgroundColor: view === v ? c.accent : c.surface1,
+            }}
+          >
+            <Text style={{ color: view === v ? c.surface0 : c.foregroundMuted, fontSize: 11, fontWeight: "600" as const }}>
+              {v === "status" ? "Status" : "Topics"}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      {view === "topics" ? (
+        data?.resolved?.sessionId ? (
+          <TopicsView c={c} workspaceId={props.workspaceId} sessionId={data.resolved.sessionId} />
+        ) : (
+          <OmCard c={c} noRail>
+            <Text style={{ fontSize: 12, color: c.foregroundMuted }}>
+              {data == null ? "loading…" : data.note ?? "no session resolved — pick one on the Status view first"}
+            </Text>
+          </OmCard>
+        )
+      ) : data == null ? (
         <Text style={{ color: c.foregroundMuted }}>loading…</Text>
       ) : !data.present ? (
         <OmCard c={c} noRail>

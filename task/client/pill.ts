@@ -23,7 +23,9 @@ export function startTaskLive(client: PluginClientContext): () => void {
   function register(workspaceId: string, agentId: string): void {
     const key = `${workspaceId}/${agentId}`;
     if (registered.has(key)) return;
-    const pill = client.addComposerPill({
+    let pill: PluginButtonRegistration;
+    try {
+      pill = client.addComposerPill({
       id: `task-pill-${key}`,
       workspaceId,
       agentId,
@@ -39,6 +41,11 @@ export function startTaskLive(client: PluginClientContext): () => void {
         },
       },
     });
+    } catch (err) {
+      // #244 (v1.0.94): silent registration death is now visible (spec-244 M1).
+      console.error("[pill:task] register failed", { workspaceId, agentId, err });
+      return;
+    }
     registered.set(key, pill);
     pollers.set(
       key,
@@ -70,10 +77,17 @@ export function startTaskLive(client: PluginClientContext): () => void {
       for (const key of [...registered.keys()]) {
         if (!seen.has(key)) drop(key);
       }
-    } catch {
-      // daemon offline / RPC hiccup — retry on the next tick
+      // #244: outcome visibility — see spec-244 M1/M2.
+      if (registered.size !== lastCount) {
+        lastCount = registered.size;
+        console.info(`[pill:task] registered=${lastCount}`);
+      }
+    } catch (err) {
+      // #244: name the failure — silent catches hid every pill death.
+      console.error("[pill:task] agents.list failed:", err);
     }
   }
+  let lastCount = -1;
 
   void sync();
   const unsub = client.paseo.agents.subscribe(() => void sync());

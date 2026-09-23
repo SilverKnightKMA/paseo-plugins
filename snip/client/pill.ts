@@ -24,7 +24,9 @@ export function startSnipLive(client: PluginClientContext): () => void {
   function register(workspaceId: string, agentId: string): void {
     const key = `${workspaceId}/${agentId}`;
     if (registered.has(key)) return;
-    const pill = client.addComposerPill({
+    let pill: PluginButtonRegistration;
+    try {
+      pill = client.addComposerPill({
       id: `snip-pill-${key}`,
       workspaceId,
       agentId,
@@ -40,6 +42,13 @@ export function startSnipLive(client: PluginClientContext): () => void {
         },
       },
     });
+    } catch (err) {
+      // #244 (v1.0.94): registration failures were silent — the pill just
+      // never appeared and nothing said why. Log with the ids so the M2
+      // contingency table in spec-244 can act on it.
+      console.error("[pill:snip] register failed", { workspaceId, agentId, err });
+      return;
+    }
     registered.set(key, pill);
     pollers.set(
       key,
@@ -74,10 +83,19 @@ export function startSnipLive(client: PluginClientContext): () => void {
       for (const key of [...registered.keys()]) {
         if (!seen.has(key)) drop(key);
       }
-    } catch {
-      // daemon offline / RPC hiccup — retry on the next tick
+      // #244: make the outcome visible — registered=0 with no error means the
+      // app-side filter rejected the ids (M2 branch 3), not a silent death.
+      if (registered.size !== lastCount) {
+        lastCount = registered.size;
+        console.info(`[pill:snip] registered=${lastCount}`);
+      }
+    } catch (err) {
+      // #244: daemon offline / RPC hiccup used to be a silent catch — now it
+      // names the failure so "no pills ever" is diagnosable in devtools.
+      console.error("[pill:snip] agents.list failed:", err);
     }
   }
+  let lastCount = -1;
 
   void sync();
   const unsub = client.paseo.agents.subscribe(() => void sync());

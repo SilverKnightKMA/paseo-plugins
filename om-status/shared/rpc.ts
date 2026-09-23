@@ -80,3 +80,35 @@ export const GetOmStatusRpc = {
 };
 
 export type OmStatusState = z.infer<typeof GetOmStatusRpc.output>;
+
+/**
+ * #244 (M3, v1.0.94): OM Topics — read-only listing of a session's topic
+ * files (.memory/<sessionId>/*.md minus INDEX.md) with head observations.
+ * On-demand only (never part of the live poll); the panel fetches when the
+ * Topics segment/pill is opened.
+ */
+export const OmTopicSchema = z.object({
+  name: z.string(),
+  sizeBytes: z.number(),
+  updatedAt: z.string(),
+  /** first observation lines (≤5, 200 chars each) — the preview in the list */
+  head: z.array(z.string()).default([]),
+});
+
+export const GetOmTopicsRpc = {
+  name: "om-status.topics",
+  input: z.object({
+    workspaceId: z.string(),
+    /** explicit session — the panel always knows it from the status resolution */
+    sessionId: z.string(),
+  }),
+  output: z.object({
+    present: z.boolean(),
+    sessionId: z.string().nullable(),
+    topics: z.array(OmTopicSchema).default([]),
+    note: z.string().nullish(),
+  }),
+};
+
+export type OmTopic = z.infer<typeof OmTopicSchema>;
+export type OmTopicsState = z.infer<typeof GetOmTopicsRpc.output>;

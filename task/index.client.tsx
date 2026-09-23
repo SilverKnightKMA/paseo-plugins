@@ -5,24 +5,39 @@ import { startTaskLive } from "./client/pill.js";
 import { TaskSnapshotCard } from "./client/snapshot.js";
 
 export default function contribute(client: PluginClientContext) {
-  client.addWorkspacePanel({
-    id: "task",
-    title: "Tasks",
-    icon: "ListTodo",
-    context: "workspace",
-    Component: TaskPanel,
-  });
+  // #244 (v1.0.94, spec M1): fragment-level guards — one failing registration
+  // must not abort the whole contribute() (F9 lesson: a throw kills everything after it).
+  const guard = <T,>(tag: string, fn: () => T): T | undefined => {
+    try {
+      return fn();
+    } catch (err) {
+      console.error(`[task] ${tag} failed:`, err);
+      return undefined;
+    }
+  };
 
-  client.addCommandCenterItem({
-    id: "task-open",
-    title: "Tasks: session task list (read-only)",
-    icon: "ListTodo",
-    keywords: ["task", "tasks", "todo", "progress"],
-    context: "workspace",
-    onSelect(context_) {
-      context_.openPanel("task");
-    },
-  });
+  guard("addWorkspacePanel", () =>
+    client.addWorkspacePanel({
+      id: "task",
+      title: "Tasks",
+      icon: "ListTodo",
+      context: "workspace",
+      Component: TaskPanel,
+    }),
+  );
+
+  guard("addCommandCenterItem", () =>
+    client.addCommandCenterItem({
+      id: "task-open",
+      title: "Tasks: session task list (read-only)",
+      icon: "ListTodo",
+      keywords: ["task", "tasks", "todo", "progress"],
+      context: "workspace",
+      onSelect(context_) {
+        context_.openPanel("task");
+      },
+    }),
+  );
 
   // Composer pill: done/total gauge next to the agent badge, model-invisible
   // by construction (client render layer only, never in pi's state.messages).
@@ -75,9 +90,10 @@ export default function contribute(client: PluginClientContext) {
     summary: z.string(),
   });
 
-  client.addTimelineTransformer({
-    id: "task-snapshot-transformer",
-    query: { itemType: "tool_call" },
+  guard("addTimelineTransformer", () =>
+    client.addTimelineTransformer({
+      id: "task-snapshot-transformer",
+      query: { itemType: "tool_call" },
     transform: ({ item }) => {
       const it = item as { type?: string; name?: unknown; detail?: unknown };
       if (it.type !== "tool_call") return undefined;
@@ -108,32 +124,36 @@ export default function contribute(client: PluginClientContext) {
         ],
       };
     },
-  });
+  }));
 
   // Doorbell wake-signal items (server/doorbell-server.ts, kind "doorbell" v1)
   // are renderer-less BY DESIGN — invisible wake pings, not content. App 0.8.0
   // shows "Plugin timeline item unavailable." for plugin items whose owning
   // plugin registers no renderer — register a null renderer so bells stay
   // invisible on the canonical/history path too (2026-09-22 UI audit).
-  client.addTimelineRenderer({
-    kind: "doorbell",
-    version: 1,
-    schema: z.object({ bell: z.string(), file: z.string(), ts: z.string() }),
-    Component: () => null,
-  });
-
-  client.addTimelineRenderer({
-    kind: "task-snapshot",
-    version: 1,
-    schema: z.object({
-      tool: z.enum(["task_create", "task_update", "task_list"]),
-      tasks: snapshotTasksSchema,
-      changes: snapshotChangesSchema.optional(),
-      fields: snapshotFieldsSchema.optional(),
-      judge: snapshotJudgeSchema.optional(),
+  guard("addTimelineRenderer(doorbell)", () =>
+    client.addTimelineRenderer({
+      kind: "doorbell",
+      version: 1,
+      schema: z.object({ bell: z.string(), file: z.string(), ts: z.string() }),
+      Component: () => null,
     }),
-    Component: TaskSnapshotCard,
-  });
+  );
+
+  guard("addTimelineRenderer(task-snapshot)", () =>
+    client.addTimelineRenderer({
+      kind: "task-snapshot",
+      version: 1,
+      schema: z.object({
+        tool: z.enum(["task_create", "task_update", "task_list"]),
+        tasks: snapshotTasksSchema,
+        changes: snapshotChangesSchema.optional(),
+        fields: snapshotFieldsSchema.optional(),
+        judge: snapshotJudgeSchema.optional(),
+      }),
+      Component: TaskSnapshotCard,
+    }),
+  );
 
   return () => {
     stopPill();
