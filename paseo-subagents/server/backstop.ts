@@ -73,8 +73,11 @@ export function armBackstop(env: NodeJS.ProcessEnv = process.env, armTimeoutMs =
 			ready,
 			isConnected: () => client.getConnectionState?.().status === "connected",
 		};
-	} catch {
-		// Factory refused (bad URL shape) — stay null; lifecycle capture remains.
+	} catch (err) {
+		// Factory refused (bad URL shape / unresolved import) — stay null; lifecycle capture remains.
+		console.log(
+			`[paseo-subagents] armBackstop REFUSED (${url}): ${err instanceof Error ? err.message : String(err)}`,
+		);
 		return null;
 	}
 }

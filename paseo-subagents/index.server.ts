@@ -109,8 +109,12 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
   const getApi = async (): Promise<PaseoSendSlice | null> => {
     if (paseoApi) return paseoApi;
     backstop ??= armBackstop();
-    if (!backstop) return null;
+    if (!backstop) {
+      console.log("[paseo-subagents] getApi: armBackstop returned null");
+      return null;
+    }
     const ok = (await backstop.ready) || backstop.isConnected();
+    if (!ok) console.log(`[paseo-subagents] getApi: backstop not ready (state=${backstop.isConnected() ? "connected" : "not-connected"})`);
     return ok ? (backstop.client as PaseoSendSlice) : null;
   };
 
