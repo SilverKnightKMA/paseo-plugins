@@ -44,6 +44,31 @@ export interface PendingQuestion {
   childId: string;
   parentId: string;
   createdAt: number;
+  /** last time an [ask-stale] escalation was sent to the parent (pollRequired port, #294 P4). */
+  lastNudgedAt?: number;
+}
+
+// ── pollRequired port (batch #294 P4, @pify/workflow 0.13.2 pattern) ──
+// Headless children cannot "wait in-turn" forever: ask_parent parks them and
+// the [parent-answer] push starts their next turn. If the push path dies
+// (#277 class) or the parent simply forgets, the child waits SILENTLY forever.
+// The plugin holds the pending map, so the plugin polls on the child's behalf:
+// stale questions get escalated to the parent loudly instead of hanging quiet.
+export const ASK_STALE_MS = 30 * 60 * 1000; // first escalation after 30 minutes
+export const ASK_RENUDGE_MS = 60 * 60 * 1000; // re-escalate hourly until answered
+
+/** Pure: which pending questions are due for an [ask-stale] escalation right now. */
+export function staleQuestions(
+  pendings: PendingQuestion[],
+  now: number,
+  staleMs: number = ASK_STALE_MS,
+  renudgeMs: number = ASK_RENUDGE_MS,
+): PendingQuestion[] {
+  return pendings.filter((p) => {
+    const age = now - p.createdAt;
+    if (p.lastNudgedAt === undefined) return age >= staleMs; // first escalation
+    return now - p.lastNudgedAt >= renudgeMs; // re-nudge window after a sent escalation
+  });
 }
 
 export function validateQuestion(q: unknown): { ok: true; question: string } | { ok: false; error: string } {

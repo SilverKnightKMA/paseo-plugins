@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { TokenRegistry } from "./server/tokens.js";
 import { listenReplyServer, DOOR_PORT_RANGE, type ReplyServerHandle, type SpawnFn, type SpawnPoolFn, type CallerCaps, type SpawnArgs, type AskFn, type AnswerFn, type ListChildrenFn, type ArchiveChildrenFn } from "./server/mcp-server.js";
 import { registerSubagentReplyHook, registerEnvDoorHook, PARENT_ENV, MAIN_MCP_KEY } from "./server/hooks.js";
-import { canAnswer, makeQuestionId, type PendingQuestion } from "./server/ask.js";
+import { canAnswer, makeQuestionId, staleQuestions, type PendingQuestion } from "./server/ask.js";
 import { armBackstop, type BackstopHandle } from "./server/backstop.js";
 import { composeInitialPrompt, resolveRole, doorToolPolicy, type PluginSettings } from "./server/roles.js";
 import {
@@ -467,6 +467,35 @@ export default function contribute(server: PluginServerContext): PluginCleanup {
       return { error: err instanceof Error ? err.message : String(err) };
     }
   };
+
+  // ── ask-stale sweeper (pollRequired port, batch #294 P4) ──
+  // The plugin polls on parked children's behalf: a pending question older than
+  // ASK_STALE_MS gets an [ask-stale] escalation to the parent (hourly re-nudge)
+  // so a dead push path or a forgotten answer becomes LOUD instead of a silent
+  // forever-wait. Pure selection lives in staleQuestions(); delivery is best-effort.
+  const askStaleTimer = setInterval(async () => {
+    try {
+      const due = staleQuestions([...pendingQuestions.values()], Date.now());
+      if (due.length === 0) return;
+      const api = await getApi();
+      if (!api) return; // not captured yet — retry next tick
+      for (const p of due) {
+        const ageMin = Math.round((Date.now() - p.createdAt) / 60000);
+        try {
+          await api.agents
+            .ref(p.parentId)
+            .send(`[ask-stale] questionId=${p.questionId} from child (${p.childId.slice(0, 8)}) is UNANSWERED for ${ageMin}m — the child is parked waiting. Answer with the answer_child tool now, or park/ignore it deliberately. (pollRequired sweeper, #294 P4)`);
+          pendingQuestions.set(p.questionId, { ...p, lastNudgedAt: Date.now() });
+          console.log(`[paseo-subagents] ask-stale ${p.questionId}: parent ${p.parentId.slice(0, 8)} nudged (${ageMin}m)`);
+        } catch (err) {
+          console.log(`[paseo-subagents] ask-stale ${p.questionId} deliver failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    } catch {
+      // sweeper must never throw into the timer
+    }
+  }, 10 * 60 * 1000);
+  askStaleTimer.unref?.();
 
   // #230/#234: list_subagents (either parent label — same set as the Paseo UI) — the caller sees ONLY its own unarchived children.
   const listChildren: ListChildrenFn = async (parentId) => {
