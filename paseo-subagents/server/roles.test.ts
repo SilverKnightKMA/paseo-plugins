@@ -53,11 +53,11 @@ describe("resolveRole (fail-closed)", () => {
 		expect(r.ok).toBe(false);
 		if (!r.ok) expect(r.error).toContain("model");
 	});
-	test("default settings → pi/cli-openai entry + model pin", () => {
+	test("default settings → pi/magpie entry + model pin", () => {
 		const r = resolveRole("scout", {});
 		expect(r.ok).toBe(true);
 		if (r.ok) {
-			expect(r.role.providerEntry).toBe(`pi/cli-openai/${DEFAULT_ROLE_OVERRIDES.scout.model}`);
+			expect(r.role.providerEntry).toBe(`pi/magpie/${DEFAULT_ROLE_OVERRIDES.scout.model}`);
 			expect(r.role.env).toEqual({});
 		}
 	});

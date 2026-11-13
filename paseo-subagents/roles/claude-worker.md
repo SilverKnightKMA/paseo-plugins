@@ -1,7 +1,7 @@
 ---
 name: claude-worker
 description: General-purpose worker on the Claude backend — reads, writes, and edits code
-model: fci/deepseek-v4-flash
+model: sgn-magpie/fci/deepseek/deepseek-v4-flash
 thinking: medium
 ---
 

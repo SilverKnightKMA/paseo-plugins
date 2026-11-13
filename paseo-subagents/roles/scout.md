@@ -2,7 +2,7 @@
 name: scout
 description: Fast codebase recon — explores files, finds patterns, maps architecture
 tools: read, grep, find, ls
-model: cli-openai/mmcp/MiniMax-M3
+model: minimax/MiniMax-M3
 thinking: high
 ---
 

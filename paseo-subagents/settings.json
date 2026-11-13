@@ -1,40 +1,40 @@
 {
-  "$comment": "Repo wins (spec v6): plugin \u0111\u1ecdc file n\u00e0y l\u00fac load. M\u1ed7i role \u0111\u00fang M\u1ed8T provider. F11 2026-09-22: revert 5 role v\u1ec1 b\u1ea3n g\u1ed1c pi-config agents/*.md @508dd96; th\u00eam claude-worker + codex-worker (user ch\u1ecdn: claude=fci/deepseek-v4-flash, codex=gpt-5.6-luna \u2014 \u0111\u00e3 verify LUNA-OK, thinking medium c\u1ea3 hai).",
+  "$comment": "Repo wins (spec v6): plugin \u0111\u1ecdc file n\u00e0y l\u00fac load. M\u1ed7i role \u0111\u00fang M\u1ed8T provider. F11 2026-09-22: revert 5 role v\u1ec1 b\u1ea3n g\u1ed1c pi-config agents/*.md @508dd96; th\u00eam claude-worker + codex-worker. 2026-11-13: cli-proxy-api \u0111\u00e3 ch\u1ebft (container kh\u00f4ng c\u00f2n) \u2014 m\u1ecdi route cli-openai/zaicp/mmcp/fci \u0111\u1ecb\u1ed5i sang magpie (OracleVM). Models \u0111\u01b0\u1ee3c \u0111\u1ecbnh trong ~/.pi/agent/models.json; \u1ed1 \u0111\u00e2y ch\u1ec9 pin ph\u1ea7n id sau d\u1ea5u '/' \u0111\u1ea7u ti\u00ean (daemon gh\u00e9p provider entry 'pi/magpie/<model>').",
   "roles": {
     "scout": {
       "provider": "pi",
       "config": "scout",
-      "model": "mmcp/MiniMax-M3",
+      "model": "minimax/MiniMax-M3",
       "thinking": "high"
     },
     "researcher": {
       "provider": "pi",
       "config": "researcher",
-      "model": "zaicp/glm-5.3-flash",
+      "model": "zai/glm-5.3-flash",
       "thinking": "high"
     },
     "worker": {
       "provider": "pi",
       "config": "worker",
-      "model": "zaicp/glm-5.3",
+      "model": "zai/glm-5.3",
       "thinking": "high"
     },
     "mermaid-maker": {
       "provider": "pi",
       "config": "mermaid-maker",
-      "model": "zaicp/glm-5.3-flash",
+      "model": "zai/glm-5.3-flash",
       "thinking": "max"
     },
     "svg-maker": {
       "provider": "pi",
       "config": "svg-maker",
-      "model": "zaicp/glm-5.3-flash",
+      "model": "zai/glm-5.3-flash",
       "thinking": "max"
     },
     "claude-worker": {
       "provider": "claude",
       "config": "acceptEdits",
-      "model": "fci/deepseek-v4-flash",
+      "model": "sgn-magpie/fci/deepseek/deepseek-v4-flash",
       "thinking": "medium"
     },
     "codex-worker": {

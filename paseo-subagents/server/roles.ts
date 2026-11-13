@@ -54,7 +54,10 @@ export const PROVIDER_CATALOGS: Record<string, {
 }> = {
 	pi: {
 		configs: ["scout", "researcher", "worker", "mermaid-maker", "svg-maker"],
-		defaultProviderEntry: "pi/cli-openai", // Plugin maps the short name to the actual entry.
+		// 2026-11-13: cli-proxy-api is gone — the daemon entry is the live pi provider
+		// (magpie on OracleVM). The daemon splits "provider/model" at the first slash:
+		// "pi/magpie/<model>" → engine pi, model "magpie/<model>".
+		defaultProviderEntry: "pi/magpie",
 	},
 	codex: {
 		configs: ["auto", "review", "full", "read-only"], // #273 matrix: read-only = hidden preset in daemon MODE_PRESETS
@@ -135,15 +138,18 @@ export interface ResolvedRole {
 /** Default runtime parameters for each role (example spec settings — repo wins). */
 export const DEFAULT_ROLE_OVERRIDES: Record<string, RoleOverride> = {
 	// F11 2026-09-22: defaults mirror settings.json (repo wins; these are fail-safe only).
-	// Pi roles: model+thinking match pi-config agents/*.md @508dd96 (the originals).
-	scout: { provider: "pi", config: "scout", model: "mmcp/MiniMax-M3", thinking: "high" },
-	researcher: { provider: "pi", config: "researcher", model: "zaicp/glm-5.3-flash", thinking: "high" },
-	worker: { provider: "pi", config: "worker", model: "zaicp/glm-5.3", thinking: "high" },
-	"mermaid-maker": { provider: "pi", config: "mermaid-maker", model: "zaicp/glm-5.3-flash", thinking: "max" },
-	"svg-maker": { provider: "pi", config: "svg-maker", model: "zaicp/glm-5.3-flash", thinking: "max" },
+	// 2026-11-13: cli-proxy-api is gone — every cli-openai-era model id was migrated to
+	// magpie (OracleVM). Model ids live in ~/.pi/agent/models.json; the plugin pins only
+	// the id after the first slash (daemon prepends the "pi/magpie" entry).
+	scout: { provider: "pi", config: "scout", model: "minimax/MiniMax-M3", thinking: "high" },
+	researcher: { provider: "pi", config: "researcher", model: "zai/glm-5.3-flash", thinking: "high" },
+	worker: { provider: "pi", config: "worker", model: "zai/glm-5.3", thinking: "high" },
+	"mermaid-maker": { provider: "pi", config: "mermaid-maker", model: "zai/glm-5.3-flash", thinking: "max" },
+	"svg-maker": { provider: "pi", config: "svg-maker", model: "zai/glm-5.3-flash", thinking: "max" },
 	// F11 new roles (user-pinned 2026-09-22): claude=fci/deepseek-v4-flash, codex=gpt-5.6-luna
 	// (verified live: codex exec --model gpt-5.6-luna → LUNA-OK), thinking medium cả hai.
-	"claude-worker": { provider: "claude", config: "acceptEdits", model: "fci/deepseek-v4-flash", thinking: "medium" },
+	// 2026-11-13: claude-worker → magpie (the old fci/* id lived on the dead cli-proxy-api).
+	"claude-worker": { provider: "claude", config: "acceptEdits", model: "sgn-magpie/fci/deepseek/deepseek-v4-flash", thinking: "medium" },
 	"codex-worker": { provider: "codex", config: "full", model: "gpt-5.6-luna", thinking: "medium" },
 };
 
