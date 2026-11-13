@@ -54,10 +54,13 @@ export const PROVIDER_CATALOGS: Record<string, {
 }> = {
 	pi: {
 		configs: ["scout", "researcher", "worker", "mermaid-maker", "svg-maker"],
-		// 2026-11-13: cli-proxy-api is gone — the daemon entry is the live pi provider
-		// (magpie on OracleVM). The daemon splits "provider/model" at the first slash:
-		// "pi/magpie/<model>" → engine pi, model "magpie/<model>".
-		defaultProviderEntry: "pi/magpie",
+		// No pi provider in source (2026-11-13 law: source carries wiring only, no model/
+		// provider config). The settings.json model for a pi role is the FULL pi model
+		// reference "<pi-provider>/<model>" — for example "magpie/minimax/MiniMax-M3" —
+		// so the daemon entry becomes "pi/magpie/minimax/MiniMax-M3": the daemon splits
+		// at the first slash (engine pi, model "magpie/..."), then pi's parseModelReference
+		// splits again into provider "magpie", id "minimax/MiniMax-M3".
+		defaultProviderEntry: "pi",
 	},
 	codex: {
 		configs: ["auto", "review", "full", "read-only"], // #273 matrix: read-only = hidden preset in daemon MODE_PRESETS
@@ -125,7 +128,7 @@ export function loadRoleTemplatesFromDir(rolesDir: string): Map<string, RoleTemp
 
 export interface ResolvedRole {
 	template: RoleTemplate;
-	providerEntry: string; // Actual daemon entry, for example "pi/cli-openai".
+	providerEntry: string; // Actual daemon entry, for example "pi/magpie/minimax/MiniMax-M3".
 	provider: string; // Short name: "pi" | "codex" | "claude" (same provider family as the catalog key).
 	config: string;
 	model: string | undefined;
@@ -135,22 +138,21 @@ export interface ResolvedRole {
 	channel: "user" | "append" | "replace";
 }
 
-/** Default runtime parameters for each role (example spec settings — repo wins). */
+/** Default runtime wiring for each role (fail-safe only — repo settings.json wins).
+ *
+ * NO MODEL IDS IN SOURCE (2026-11-13 law): provider + config are wiring (which engine
+ * and permission level the role runs with); every model/thinking value lives in the
+ * plugin settings.json — the single source of truth. A role missing from settings.json
+ * fails closed in resolveRole ("no model pinned") instead of falling back to a baked-in id.
+ */
 export const DEFAULT_ROLE_OVERRIDES: Record<string, RoleOverride> = {
-	// F11 2026-09-22: defaults mirror settings.json (repo wins; these are fail-safe only).
-	// 2026-11-13: cli-proxy-api is gone — every cli-openai-era model id was migrated to
-	// magpie (OracleVM). Model ids live in ~/.pi/agent/models.json; the plugin pins only
-	// the id after the first slash (daemon prepends the "pi/magpie" entry).
-	scout: { provider: "pi", config: "scout", model: "minimax/MiniMax-M3", thinking: "high" },
-	researcher: { provider: "pi", config: "researcher", model: "zai/glm-5.3-flash", thinking: "high" },
-	worker: { provider: "pi", config: "worker", model: "zai/glm-5.3", thinking: "high" },
-	"mermaid-maker": { provider: "pi", config: "mermaid-maker", model: "zai/glm-5.3-flash", thinking: "max" },
-	"svg-maker": { provider: "pi", config: "svg-maker", model: "zai/glm-5.3-flash", thinking: "max" },
-	// F11 new roles (user-pinned 2026-09-22): claude=fci/deepseek-v4-flash, codex=gpt-5.6-luna
-	// (verified live: codex exec --model gpt-5.6-luna → LUNA-OK), thinking medium cả hai.
-	// 2026-11-13: claude-worker → magpie (the old fci/* id lived on the dead cli-proxy-api).
-	"claude-worker": { provider: "claude", config: "acceptEdits", model: "sgn-magpie/fci/deepseek/deepseek-v4-flash", thinking: "medium" },
-	"codex-worker": { provider: "codex", config: "full", model: "gpt-5.6-luna", thinking: "medium" },
+	scout: { provider: "pi", config: "scout" },
+	researcher: { provider: "pi", config: "researcher" },
+	worker: { provider: "pi", config: "worker" },
+	"mermaid-maker": { provider: "pi", config: "mermaid-maker" },
+	"svg-maker": { provider: "pi", config: "svg-maker" },
+	"claude-worker": { provider: "claude", config: "acceptEdits" },
+	"codex-worker": { provider: "codex", config: "full" },
 };
 
 /**

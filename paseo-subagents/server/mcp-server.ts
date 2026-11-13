@@ -186,7 +186,7 @@ export type DeliverFn = (
 
 /**
  * #226: decorate the child's title with its identity — `[child-report] scout (scout,
- * a15788c7, pi/cli-openai/mmcp/MiniMax-M3): …`. Parts that are unknown are simply
+ * a15788c7, pi/magpie/minimax/MiniMax-M3): …`. Parts that are unknown are simply
  * omitted (hook-minted callers may have no role); a caller with no identity at all
  * keeps the bare title, so the envelope stays valid in every case.
  */

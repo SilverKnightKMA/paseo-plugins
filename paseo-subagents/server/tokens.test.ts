@@ -85,9 +85,9 @@ describe("TokenRegistry", () => {
 describe("#226 providerModel identity", () => {
   test("mint stores providerModel; verify returns it", () => {
     const r = new TokenRegistry();
-    const t = r.mint("p1", "scout-1", { role: "scout", providerModel: "pi/cli-openai/mmcp/MiniMax-M3" });
+    const t = r.mint("p1", "scout-1", { role: "scout", providerModel: "pi/magpie/minimax/MiniMax-M3" });
     const caps = r.verify(t);
-    expect(caps?.providerModel).toBe("pi/cli-openai/mmcp/MiniMax-M3");
+    expect(caps?.providerModel).toBe("pi/magpie/minimax/MiniMax-M3");
     expect(caps?.role).toBe("scout");
   });
 

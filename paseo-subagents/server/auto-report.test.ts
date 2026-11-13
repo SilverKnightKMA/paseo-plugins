@@ -13,7 +13,7 @@ const child: WatchedChild = {
 	parentId: "cf76ad71-3f82-4296-960f-fa9e2fcd06ee",
 	title: "f10-smoke-scout",
 	role: "scout",
-	providerModel: "pi/cli-openai/mmcp/MiniMax-M3",
+	providerModel: "pi/magpie/minimax/MiniMax-M3",
 	spawnedAt: Date.now(),
 };
 
@@ -52,7 +52,7 @@ describe("lastAssistantText (#225)", () => {
 describe("autoReportEnvelope (#226 identity header)", () => {
 	test("carries role, agentId-8, providerModel and the auto marker", () => {
 		const env = autoReportEnvelope(child, "F10-SCOUT-OK");
-		expect(env.startsWith("[child-report] f10-smoke-scout (scout, a15788c7, pi/cli-openai/mmcp/MiniMax-M3): F10-SCOUT-OK")).toBe(true);
+		expect(env.startsWith("[child-report] f10-smoke-scout (scout, a15788c7, pi/magpie/minimax/MiniMax-M3): F10-SCOUT-OK")).toBe(true);
 		expect(env).toContain("[auto-report]");
 	});
 

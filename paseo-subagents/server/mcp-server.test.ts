@@ -58,7 +58,7 @@ describe("scoped reply MCP server", () => {
   test("#226: deliver title carries role + agentId-8 + providerModel; meta carries callerAgentId", async () => {
     const ident = registry.mint("parent-xyz", "f10-smoke-scout", {
       role: "scout",
-      providerModel: "pi/cli-openai/mmcp/MiniMax-M3",
+      providerModel: "pi/magpie/minimax/MiniMax-M3",
     });
     registry.bind(ident, "a15788c7-a137-4bed-b8fb-9a9e83320151");
     const r = await rpc(
@@ -68,7 +68,7 @@ describe("scoped reply MCP server", () => {
     );
     expect(r.body.result.isError).toBe(false);
     const d = deliveries[deliveries.length - 1];
-    expect(d.title).toBe("f10-smoke-scout (scout, a15788c7, pi/cli-openai/mmcp/MiniMax-M3)");
+    expect(d.title).toBe("f10-smoke-scout (scout, a15788c7, pi/magpie/minimax/MiniMax-M3)");
     expect(d.meta?.callerAgentId).toBe("a15788c7-a137-4bed-b8fb-9a9e83320151");
     expect(d.prompt).toBe("F10-SCOUT-OK");
   });

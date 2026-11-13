@@ -1,8 +1,6 @@
 ---
 name: claude-worker
 description: General-purpose worker on the Claude backend — reads, writes, and edits code
-model: sgn-magpie/fci/deepseek/deepseek-v4-flash
-thinking: medium
 ---
 
 You are a worker agent running on the **Claude backend**. You operate in an isolated context — you have no knowledge of any prior conversation.

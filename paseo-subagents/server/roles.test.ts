@@ -53,12 +53,24 @@ describe("resolveRole (fail-closed)", () => {
 		expect(r.ok).toBe(false);
 		if (!r.ok) expect(r.error).toContain("model");
 	});
-	test("default settings → pi/magpie entry + model pin", () => {
+	test("NO model in source: empty settings now fail closed (2026-11-13 law)", () => {
 		const r = resolveRole("scout", {});
+		expect(r.ok).toBe(false);
+		if (!r.ok) expect(r.error).toContain("no model pinned");
+	});
+	test("settings-provided model builds the full pi entry 'pi/<pi-provider>/<model>'", () => {
+		const r = resolveRole("scout", { roles: { scout: { model: "magpie/minimax/MiniMax-M3" } } });
 		expect(r.ok).toBe(true);
 		if (r.ok) {
-			expect(r.role.providerEntry).toBe(`pi/magpie/${DEFAULT_ROLE_OVERRIDES.scout.model}`);
+			expect(r.role.providerEntry).toBe("pi/magpie/minimax/MiniMax-M3");
 			expect(r.role.env).toEqual({});
+		}
+	});
+	test("default wiring keeps provider+config only; model/thinking are settings-only", () => {
+		expect(DEFAULT_ROLE_OVERRIDES.scout).toEqual({ provider: "pi", config: "scout" });
+		for (const o of Object.values(DEFAULT_ROLE_OVERRIDES)) {
+			expect(o.model).toBeUndefined();
+			expect(o.thinking).toBeUndefined();
 		}
 	});
 	test("the Claude facet includes the MCP_TOOL_TIMEOUT environment variable", () => {
@@ -75,7 +87,7 @@ describe("resolveRole (fail-closed)", () => {
 
 describe("composeInitialPrompt (user channel — does not modify systemPrompt config)", () => {
 	test("prompt + --- + TASK", () => {
-		const r = resolveRole("scout", {});
+		const r = resolveRole("scout", { roles: { scout: { model: "magpie/minimax/MiniMax-M3" } } });
 		if (!r.ok) throw new Error("resolve failed");
 		const p = composeInitialPrompt(r.role, "map the repo");
 		expect(p).toContain("---");
@@ -109,7 +121,7 @@ describe("modeMap config -> modeId", () => {
 	test("codex full -> full-access; pi role -> modeId undefined", () => {
 		const f = resolveRole("worker", { roles: { worker: { provider: "codex", config: "full", model: "m" } } });
 		expect(f.ok && f.role.modeId).toBe("full-access");
-		const p = resolveRole("scout", {});
+		const p = resolveRole("scout", { roles: { scout: { model: "magpie/minimax/MiniMax-M3" } } });
 		expect(p.ok && p.role.modeId).toBeUndefined();
 	});
 	test("codex read-only maps to the hidden read-only preset (#273 matrix)", () => {
@@ -156,10 +168,10 @@ describe("#225 role templates tell the provider truth", () => {
 
 describe("#226 resolved role carries the short provider", () => {
 	test("resolveRole exposes provider for the toolPolicy decision", () => {
-		const r = resolveRole("codex-worker", {});
+		const r = resolveRole("codex-worker", { roles: { "codex-worker": { model: "gpt-5.6-luna" } } });
 		expect(r.ok).toBe(true);
 		if (r.ok) expect(r.role.provider).toBe("codex");
-		const s = resolveRole("scout", {});
+		const s = resolveRole("scout", { roles: { scout: { model: "magpie/minimax/MiniMax-M3" } } });
 		expect(s.ok).toBe(true);
 		if (s.ok) expect(s.role.provider).toBe("pi");
 	});
